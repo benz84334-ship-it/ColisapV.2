@@ -1,0 +1,382 @@
+import { generateSeedData } from '../data/seedData.js';
+import { BRANCH_OPTIONS, ROLES, STORAGE_KEYS } from '../utils/constants.js';
+import { addDays, todayIso } from '../utils/formatters.js';
+
+export const DATA_KEYS = [
+  'users',
+  'members',
+  'loans',
+  'collections',
+  'payments',
+  'reports',
+  'availments',
+  'settings',
+  'activityLogs',
+  'notifications',
+  'dashboard',
+];
+
+const LEGACY_DEMO_BRANCHES = ['Main Branch', 'North Branch', 'South Branch', 'East Branch', 'West Branch'];
+const REPORTS_RESET_KEY = 'bmpc-reports-reset-v1';
+
+export function loadKey(key, fallback) {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEYS[key] || key);
+    return raw ? JSON.parse(raw) : fallback;
+  } catch (error) {
+    console.error(`Unable to load ${key} from LocalStorage`, error);
+    return fallback;
+  }
+}
+
+export function saveKey(key, value) {
+  localStorage.setItem(STORAGE_KEYS[key] || key, JSON.stringify(value));
+}
+
+function ensureBranchAssignments(database) {
+  const branches = BRANCH_OPTIONS;
+  const branchForIndex = (index) => branches[index % branches.length];
+
+  const members = (database.members || []).map((member, index) => ({
+    ...member,
+    branch: member.branch || branchForIndex(index),
+  }));
+  const memberBranchMap = new Map(members.map((member) => [member.id, member.branch]));
+
+  const loans = (database.loans || []).map((loan, index) => ({
+    ...loan,
+    branch: loan.branch || memberBranchMap.get(loan.memberId) || branchForIndex(index),
+  }));
+  const loanBranchMap = new Map(loans.map((loan) => [loan.id, loan.branch]));
+
+  const payments = (database.payments || []).map((payment, index) => ({
+    ...payment,
+    branch: payment.branch || loanBranchMap.get(payment.loanId) || branchForIndex(index),
+  }));
+
+  const collections = (database.collections || []).map((collection, index) => ({
+    ...collection,
+    branch: collection.branch || loanBranchMap.get(collection.loanId) || branchForIndex(index),
+  }));
+
+  const notifications = (database.notifications || []).map((notification, index) => ({
+    ...notification,
+    branch: notification.branch || branchForIndex(index),
+  }));
+
+  const activityLogs = (database.activityLogs || []).map((activity, index) => ({
+    ...activity,
+    branch: activity.branch || branchForIndex(index),
+  }));
+
+  const reports = (database.reports || []).map((report, index) => ({
+    ...report,
+    branch: report.branch || branchForIndex(index),
+  }));
+  const availments = (database.availments || []).map((availment, index) => ({
+    ...availment,
+    branch: availment.branch || branchForIndex(index),
+  }));
+
+  return {
+    ...database,
+    members,
+    loans,
+    payments,
+    collections,
+    notifications,
+    activityLogs,
+    reports,
+    availments,
+  };
+}
+
+function nextUserId(users) {
+  const max = users.reduce((highest, user) => {
+    const value = Number(String(user.id || '').split('-').pop());
+    return Number.isNaN(value) ? highest : Math.max(highest, value);
+  }, 0);
+  return `USR-${String(max + 1).padStart(4, '0')}`;
+}
+
+function makeBranchUser(branch, role, users) {
+  const slug = branch.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+  const roleSlug = role.toLowerCase();
+  return {
+    id: nextUserId(users), username: `${roleSlug}-${slug}`,
+    password: role === ROLES.ADMIN ? 'admin123' : 'manager123',
+    fullName: `${branch} ${role}`, role, status: 'Active', branch,
+    email: `${roleSlug}.${slug}@barbazampc.coop`, contactNumber: '',
+    createdAt: new Date().toISOString(), lastLogin: null,
+  };
+}
+
+export function initializeDatabase(force = false) {
+  const hasData = localStorage.getItem(STORAGE_KEYS.initialized);
+  if (hasData && !force) return;
+
+  const data = generateSeedData();
+  data.reports = [];
+  DATA_KEYS.forEach((key) => saveKey(key, data[key]));
+  localStorage.setItem(STORAGE_KEYS.initialized, new Date().toISOString());
+}
+
+export function loadDatabase() {
+  initializeDatabase();
+  const database = DATA_KEYS.reduce((nextDatabase, key) => {
+    nextDatabase[key] = loadKey(key, key === 'settings' ? {} : []);
+    return nextDatabase;
+  }, {});
+
+  const membersWithCifkNumbers = (database.members || []).map((member, index) => {
+    const currentId = String(member.memberId || '');
+    if (/^CIFK-\d{4}-\d{6}$/i.test(currentId)) return member;
+    const year = String(member.membershipDate || member.createdAt || todayIso()).slice(0, 4);
+    const legacySequence = currentId.match(/(\d+)$/)?.[1];
+    const sequence = Number(legacySequence || index + 1);
+    return { ...member, memberId: `CIFK-${year}-${String(sequence).padStart(6, '0')}` };
+  });
+  if (JSON.stringify(membersWithCifkNumbers) !== JSON.stringify(database.members)) {
+    database.members = membersWithCifkNumbers;
+    saveKey('members', database.members);
+  }
+
+  // Start Saved Reports at zero once, then preserve reports generated by users.
+  if (!localStorage.getItem(REPORTS_RESET_KEY)) {
+    database.reports = [];
+    saveKey('reports', []);
+    localStorage.setItem(REPORTS_RESET_KEY, new Date().toISOString());
+  }
+
+  // Keep existing records and expand older installations to the current
+  // 139-member sample dataset without resetting other local data.
+  if ((database.members || []).length < 139) {
+    const sampleMembers = generateSeedData().members;
+    const existingIds = new Set(database.members.map((member) => member.id));
+    const missingMembers = sampleMembers.filter((member) => !existingIds.has(member.id));
+    database.members = [...database.members, ...missingMembers.slice(0, 139 - database.members.length)];
+    saveKey('members', database.members);
+  }
+
+  // Keep the requested membership distribution: 15 inactive, 10 dormant,
+  // and all remaining members active.
+  const membersWithStatusDistribution = (database.members || []).map((member, index) => ({
+    ...member,
+    status: index < 15 ? 'Inactive' : index < 25 ? 'Dormant' : 'Active',
+    statusOverride: index < 15 ? 'Inactive' : index < 25 ? 'Dormant' : 'Active',
+  }));
+  if (JSON.stringify(membersWithStatusDistribution) !== JSON.stringify(database.members)) {
+    database.members = membersWithStatusDistribution;
+    saveKey('members', database.members);
+  }
+
+  // Populate older installations with 19 standalone availment-monitoring rows.
+  if ((database.availments || []).length < 19) {
+    const sampleAvailments = generateSeedData().availments;
+    const existingReferences = new Set((database.availments || []).map((item) => item.reference));
+    const missingAvailments = sampleAvailments.filter((item) => !existingReferences.has(item.reference));
+    database.availments = [...(database.availments || []), ...missingAvailments.slice(0, 19 - (database.availments || []).length)];
+    saveKey('availments', database.availments);
+  }
+  const legacyAvailmentTypes = new Set(['Regular Monitoring', 'Renewal', 'Additional Availment']);
+  const officialAvailmentTypes = ['New Enrollment', 'Policy Renewal', 'Additional Coverage', 'Benefit Claim', 'Claim Settlement'];
+  const normalizedAvailments = (database.availments || []).map((item, index) => (
+    legacyAvailmentTypes.has(item.availmentType)
+      ? { ...item, availmentType: officialAvailmentTypes[index % officialAvailmentTypes.length] }
+      : item
+  ));
+  if (JSON.stringify(normalizedAvailments) !== JSON.stringify(database.availments)) {
+    database.availments = normalizedAvailments;
+    saveKey('availments', database.availments);
+  }
+  const membersByName = new Map((database.members || []).map((member) => [member.fullName, member]));
+  const connectedAvailments = (database.availments || []).map((item, index) => {
+    const member = (database.members || []).find((candidate) => candidate.id === item.memberId) || membersByName.get(item.memberName);
+    if (!member) return item;
+    return {
+      ...item,
+      memberId: member.id,
+      memberName: member.fullName,
+      reference: member.memberId,
+      monitoringReference: item.monitoringReference || `AVM-${String(index + 1).padStart(5, '0')}`,
+      branch: member.branch,
+    };
+  });
+  if (JSON.stringify(connectedAvailments) !== JSON.stringify(database.availments)) {
+    database.availments = connectedAvailments;
+    saveKey('availments', database.availments);
+  }
+
+  // Give every loan account its own member so 75 overdue accounts represent
+  // 75 distinct members.
+  const loansWithDistinctMembers = (database.loans || []).map((loan, index) => {
+    const member = database.members[index % database.members.length];
+    return { ...loan, memberId: member.id, memberName: member.fullName, branch: member.branch };
+  });
+  database.loans = loansWithDistinctMembers;
+  saveKey('loans', database.loans);
+
+  const loanById = new Map(database.loans.map((loan) => [loan.id, loan]));
+  database.collections = (database.collections || []).map((collection) => {
+    const loan = loanById.get(collection.loanId);
+    return loan ? { ...collection, memberId: loan.memberId, memberName: loan.memberName, branch: loan.branch } : collection;
+  });
+  database.payments = (database.payments || []).map((payment) => {
+    const loan = loanById.get(payment.loanId);
+    return loan ? { ...payment, memberId: loan.memberId, memberName: loan.memberName, branch: loan.branch } : payment;
+  });
+  saveKey('collections', database.collections);
+  saveKey('payments', database.payments);
+
+  // Assign exactly 27 distinct members to the 40K package and 14 other
+  // distinct members to the 60K package.
+  const selected40kMembers = new Set();
+  const selected40kLoanIds = new Set();
+  const selected60kMembers = new Set();
+  const selected60kLoanIds = new Set();
+  for (const loan of database.loans || []) {
+    if (!selected40kMembers.has(loan.memberId) && selected40kMembers.size < 27) {
+      selected40kMembers.add(loan.memberId);
+      selected40kLoanIds.add(loan.id);
+    } else if (!selected40kMembers.has(loan.memberId)
+      && !selected60kMembers.has(loan.memberId)
+      && selected60kMembers.size < 14) {
+      selected60kMembers.add(loan.memberId);
+      selected60kLoanIds.add(loan.id);
+    }
+  }
+  const loansWithPackageDistribution = (database.loans || []).map((loan) => {
+    const principalAmount = selected40kLoanIds.has(loan.id)
+      ? 40000
+      : selected60kLoanIds.has(loan.id)
+        ? 60000
+        : [40000, 60000].includes(Number(loan.principalAmount)) ? 41000 : Number(loan.principalAmount);
+    const interestAmount = Math.round(principalAmount * (Number(loan.interest || 0) / 100));
+    return {
+      ...loan,
+      principalAmount,
+      interestAmount,
+      totalPayable: principalAmount + interestAmount,
+      penalty: Math.round(principalAmount * (Number(loan.penaltyRate || 0) / 100)),
+    };
+  });
+  if (JSON.stringify(loansWithPackageDistribution) !== JSON.stringify(database.loans)) {
+    database.loans = loansWithPackageDistribution;
+    saveKey('loans', database.loans);
+  }
+
+  // Maintain 15 distinct members in the Due Today monitoring list.
+  const dueToday = todayIso();
+  const selectedDueCollections = [];
+  const selectedMemberIds = new Set();
+  for (const collection of database.collections || []) {
+    if (!selectedMemberIds.has(collection.memberId) && selectedDueCollections.length < 15) {
+      selectedDueCollections.push(collection.id);
+      selectedMemberIds.add(collection.memberId);
+    }
+  }
+  const selectedDueIds = new Set(selectedDueCollections);
+  const updatedCollections = (database.collections || []).map((collection) => ({
+    ...collection,
+    collectionDate: selectedDueIds.has(collection.id)
+      ? dueToday
+      : collection.collectionDate === dueToday ? addDays(dueToday, 1) : collection.collectionDate,
+  }));
+  if (JSON.stringify(updatedCollections) !== JSON.stringify(database.collections)) {
+    database.collections = updatedCollections;
+    saveKey('collections', database.collections);
+  }
+
+  const users = database.users || [];
+  let updatedUsers = users.filter((user) => {
+    if (![ROLES.ADMIN, ROLES.MANAGER].includes(user.role)) return false;
+    if (!LEGACY_DEMO_BRANCHES.includes(user.branch)) return true;
+    const slug = user.branch.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+    return user.username !== `${String(user.role || '').toLowerCase()}-${slug}`;
+  });
+
+  // Main Office administration is represented by one canonical account.
+  // Older databases may contain both "admin" and "admin-main-office".
+  const mainOfficeAdmins = updatedUsers.filter(
+    (user) => user.branch === 'Main Office' && user.role === ROLES.ADMIN,
+  );
+  if (mainOfficeAdmins.length) {
+    const primaryAdmin = mainOfficeAdmins.find(
+      (user) => String(user.username || '').toLowerCase() === 'admin',
+    ) || mainOfficeAdmins[0];
+    updatedUsers = updatedUsers
+      .filter((user) => user === primaryAdmin || user.branch !== 'Main Office' || user.role !== ROLES.ADMIN)
+      .map((user) => user === primaryAdmin ? {
+        ...user,
+        username: 'admin',
+        fullName: user.fullName === 'Main Office Admin' ? 'System Administrator' : user.fullName,
+        branch: 'Main Office',
+        role: ROLES.ADMIN,
+      } : user);
+  }
+
+  BRANCH_OPTIONS.forEach((branch) => {
+    [ROLES.ADMIN, ROLES.MANAGER].forEach((role) => {
+      const hasAssignment = updatedUsers.some((user) => user.branch === branch && user.role === role);
+      if (!hasAssignment) updatedUsers.push(makeBranchUser(branch, role, updatedUsers));
+    });
+  });
+
+  // Once authenticated, retain the signed-in account and the opposite role
+  // assigned to the same branch.
+  try {
+    const rawSession = localStorage.getItem(STORAGE_KEYS.session) || sessionStorage.getItem(STORAGE_KEYS.session);
+    const session = rawSession ? JSON.parse(rawSession) : null;
+    const signedInUser = updatedUsers.find((user) => user.id === session?.userId);
+    if (signedInUser) {
+      const counterpartRole = signedInUser.role === ROLES.MANAGER ? ROLES.ADMIN : ROLES.MANAGER;
+      const counterpart = updatedUsers.find((user) => user.role === counterpartRole && user.branch === signedInUser.branch);
+      const retainedIds = new Set([signedInUser.id, counterpart?.id].filter(Boolean));
+      updatedUsers = updatedUsers.filter((user) => retainedIds.has(user.id));
+    }
+  } catch {
+    // Keep the available login accounts if stored session data is invalid.
+  }
+
+  if (JSON.stringify(updatedUsers) !== JSON.stringify(users)) {
+    database.users = updatedUsers;
+    saveKey('users', database.users);
+  }
+
+  const migratedDatabase = ensureBranchAssignments(database);
+  if (JSON.stringify(migratedDatabase) !== JSON.stringify(database)) {
+    Object.entries(migratedDatabase).forEach(([key, value]) => {
+      if (key in database) database[key] = value;
+    });
+    DATA_KEYS.forEach((key) => {
+      if (key in database) saveKey(key, database[key]);
+    });
+  }
+
+  return database;
+}
+
+export function saveDatabase(database) {
+  DATA_KEYS.forEach((key) => {
+    if (key in database) saveKey(key, database[key]);
+  });
+}
+
+export function resetDatabase() {
+  DATA_KEYS.forEach((key) => localStorage.removeItem(STORAGE_KEYS[key]));
+  localStorage.removeItem(STORAGE_KEYS.initialized);
+  localStorage.removeItem(STORAGE_KEYS.session);
+  localStorage.removeItem(REPORTS_RESET_KEY);
+  initializeDatabase(true);
+  return loadDatabase();
+}
+
+export function restoreDatabase(payload) {
+  const parsed = typeof payload === 'string' ? JSON.parse(payload) : payload;
+  const data = parsed.data || parsed;
+  DATA_KEYS.forEach((key) => {
+    if (key in data) saveKey(key, data[key]);
+  });
+  localStorage.setItem(STORAGE_KEYS.initialized, new Date().toISOString());
+  return loadDatabase();
+}

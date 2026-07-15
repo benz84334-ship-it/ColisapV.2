@@ -1,0 +1,11 @@
+cifNumber,memberId,fullName,address,barangay,birthdate,gender,contactNumber,membershipDate,status,branch,shareCapital
+CIF-00001,MPC-00001,Ana Alvarez,12 Poblacion,Anini-y,1980-05-12,Female,09170000001,2018-03-15,Active,Main Office,1500
+CIF-00002,MPC-00002,Ramon Bautista,34 Brgy. 1,Binangonan,1975-11-02,Male,09170000002,2019-07-22,Active,Main Office,2500
+CIF-00003,MPC-00003,Liza Cruz,78 San Roque,Dumangas,1988-02-18,Female,09170000003,2020-01-10,Active,Branch A,500
+CIF-00004,MPC-00004,Miguel Dela Pena,5 Brgy. 2,Catmon,1990-08-30,Male,09170000004,2017-09-01,Inactive,Branch B,0
+CIF-00005,MPC-00005,Teresa Escario,21 Rizal St.,Anini-y,1972-04-05,Female,09170000005,2016-11-12,Active,Branch C,10000
+CIF-00006,MPC-00006,Nestor Flores,56 Mabini,Anini-y,1982-12-22,Male,09170000006,2019-05-20,Dormant,Branch A,500
+CIF-00007,MPC-00007,Carmela Garcia,9 Del Pilar,Poblacion,1969-07-14,Female,09170000007,2015-02-28,Active,Main Office,3000
+CIF-00008,MPC-00008,Jose Herrera,101 Lopez,Brgy. 3,1985-10-01,Male,09170000008,2021-06-03,Active,Branch B,2000
+CIF-00009,MPC-00009,Marites Ilagan,44 Mabini,Brgy. 4,1979-03-23,Female,09170000009,2018-12-09,Active,Branch C,750
+CIF-00010,MPC-00010,Daniel Javier,18 M. Roxas,Anini-y,1992-09-17,Male,09170000010,2022-04-15,Active,Branch A,1250
