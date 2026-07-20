@@ -1,4 +1,4 @@
-# Getting Started with Create React App
+# Getting Started
 
 ## Supabase database setup
 
@@ -15,6 +15,9 @@ The application stores shared records in Supabase instead of browser LocalStorag
    VITE_SUPABASE_PUBLISHABLE_KEY=your-publishable-key
    ```
 
+   Older Supabase projects may provide an anon key instead. In that case, use
+   `VITE_SUPABASE_ANON_KEY`.
+
 6. Restart the development server with `npm run dev`.
 
 The `app_data` table uses Row Level Security, and Realtime keeps connected computers synchronized.
@@ -28,7 +31,7 @@ In the project directory, you can run:
 ### `npm start`
 
 Runs the app in the development mode.\
-Open [http://localhost:3000](http://localhost:3000) to view it in your browser.
+Open the local URL printed by Vite, usually [http://localhost:5173](http://localhost:5173), to view it in your browser.
 
 The page will reload when you make changes.\
 You may also see any lint errors in the console.
