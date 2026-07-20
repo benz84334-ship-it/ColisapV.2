@@ -46,6 +46,24 @@ function placeholderPhoto() {
   return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
 }
 
+function avatarForName(name = 'Member') {
+  const initials = String(name)
+    .split(' ')
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0])
+    .join('')
+    .toUpperCase() || 'M';
+  const palette = ['#0f766e', '#2563eb', '#f59e0b', '#dc2626', '#7c3aed', '#0891b2'];
+  const colorIndex = Array.from(String(name)).reduce((total, character) => total + character.charCodeAt(0), 0) % palette.length;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="240" height="240" viewBox="0 0 240 240">
+    <rect width="240" height="240" rx="36" fill="${palette[colorIndex]}"/>
+    <circle cx="184" cy="54" r="46" fill="rgba(255,255,255,.18)"/>
+    <text x="120" y="140" text-anchor="middle" font-family="Arial, sans-serif" font-size="72" font-weight="700" fill="#fff">${initials}</text>
+  </svg>`;
+  return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
+}
+
 function withMemberPhoto(member = {}) {
   const currentPhoto = String(member.photo || '');
   const usesInitialsAvatar = !currentPhoto || currentPhoto.startsWith('data:image/svg+xml');
