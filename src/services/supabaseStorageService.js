@@ -20,6 +20,15 @@ export function freshDatabase() {
   return { ...data, reports: [] };
 }
 
+function isBlankInitialDatabase(database) {
+  return DATA_KEYS.every((key) => {
+    const value = database[key];
+    if (Array.isArray(value)) return value.length === 0;
+    if (value && typeof value === 'object') return Object.keys(value).length === 0;
+    return value == null;
+  });
+}
+
 export async function loadDatabaseFromSupabase() {
   assertSupabaseConfigured();
   if (!isSupabaseConfigured) return freshDatabase();
@@ -35,9 +44,24 @@ export async function loadDatabaseFromSupabase() {
 
   const values = new Map(rows.map((row) => [row.key, row.value]));
   const seeded = freshDatabase();
-  return DATA_KEYS.reduce((database, key) => {
-    database[key] = values.has(key) ? values.get(key) : seeded[key];
-    return database;
+  const database = DATA_KEYS.reduce((nextDatabase, key) => {
+    nextDatabase[key] = values.has(key) ? values.get(key) : seeded[key];
+    return nextDatabase;
+  }, {});
+
+  if (isBlankInitialDatabase(database)) {
+    await replaceSupabaseDatabase(seeded);
+    return seeded;
+  }
+
+  if (!Array.isArray(database.users) || database.users.length === 0) {
+    database.users = seeded.users;
+    await saveSupabaseKey('users', database.users);
+  }
+
+  return DATA_KEYS.reduce((nextDatabase, key) => {
+    nextDatabase[key] = key in database ? database[key] : seeded[key];
+    return nextDatabase;
   }, {});
 }
 

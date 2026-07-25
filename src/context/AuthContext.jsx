@@ -30,9 +30,10 @@ export function AuthProvider({ children }) {
 
   const login = useCallback(
     ({ username, password, remember }) => {
+      const loginValue = String(username).toLowerCase().trim();
       const user = users.find(
         (item) =>
-          item.username.toLowerCase() === String(username).toLowerCase().trim() &&
+          [item.username, item.email].some((value) => String(value || '').toLowerCase() === loginValue) &&
           item.password === password &&
           WORKSPACE_ROLES.includes(item.role) &&
           item.status === 'Active',
