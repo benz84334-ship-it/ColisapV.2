@@ -1,5 +1,5 @@
 import { generateSeedData } from '../data/seedData.js';
-import { BRANCH_OPTIONS, ROLES, STORAGE_KEYS } from '../utils/constants.js';
+import { BRANCH_OPTIONS, ROLES, STORAGE_KEYS, normalizeBranchName } from '../utils/constants.js';
 import { addDays, todayIso } from '../utils/formatters.js';
 
 export const DATA_KEYS = [
@@ -16,7 +16,6 @@ export const DATA_KEYS = [
   'dashboard',
 ];
 
-const LEGACY_DEMO_BRANCHES = ['Main Branch', 'North Branch', 'South Branch', 'East Branch', 'West Branch'];
 const REPORTS_RESET_KEY = 'bmpc-reports-reset-v1';
 
 export function loadKey(key, fallback) {
@@ -288,15 +287,8 @@ export function loadDatabase() {
   }
 
   const users = database.users || [];
-  let updatedUsers = users.filter((user) => {
-    if (![ROLES.ADMIN, ROLES.MANAGER].includes(user.role)) return false;
-    if (!LEGACY_DEMO_BRANCHES.includes(user.branch)) return true;
-    const slug = user.branch.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-    return user.username !== `${String(user.role || '').toLowerCase()}-${slug}`;
-  });
+  let updatedUsers = users.filter((user) => [ROLES.ADMIN, ROLES.MANAGER].includes(user.role));
 
-  // Main Office administration is represented by one canonical account.
-  // Older databases may contain both "admin" and "admin-main-office".
   const mainOfficeAdmins = updatedUsers.filter(
     (user) => user.branch === 'Main Office' && user.role === ROLES.ADMIN,
   );

@@ -10,20 +10,6 @@ export const USER_ROLE_OPTIONS = [ROLES.ADMIN, ROLES.MANAGER];
 
 export const BRANCH_OPTIONS = [
   'Main Office',
-  'Bugasong Branch',
-  'Culasi Branch',
-  'Tibiao Branch',
-  'Sibalom Branch',
-  'San Jose Branch',
-  'Hamtic Branch',
-  'Balasan Branch',
-  'Barotac Viejo Branch',
-  'Molo Branch',
-  'Janiuay Branch',
-  'Calinog Branch',
-  'Catilan Branch',
-  'Kalibo Branch',
-  'Roxas Branch',
 ];
 
 export function normalizeBranchName(branch = '') {
