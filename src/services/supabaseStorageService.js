@@ -6,16 +6,6 @@ export const DATA_KEYS = [
   'settings', 'activityLogs', 'notifications', 'dashboard',
 ];
 
-async function ensureSupabaseSession() {
-  if (!isSupabaseConfigured) return false;
-  const { data } = await supabase.auth.getSession();
-  if (data.session) return true;
-
-  const { error } = await supabase.auth.signInAnonymously();
-  if (error) throw new Error(`Supabase authentication failed: ${error.message}`);
-  return true;
-}
-
 function assertSupabaseConfigured() {
   if (isSupabaseConfigured) return;
   if (import.meta.env.PROD) {
@@ -33,7 +23,6 @@ export function freshDatabase() {
 export async function loadDatabaseFromSupabase() {
   assertSupabaseConfigured();
   if (!isSupabaseConfigured) return freshDatabase();
-  await ensureSupabaseSession();
 
   const { data: rows, error } = await supabase.from('app_data').select('key,value');
   if (error) throw new Error(`Unable to load Supabase data: ${error.message}`);
@@ -55,7 +44,6 @@ export async function loadDatabaseFromSupabase() {
 export async function saveSupabaseKey(key, value) {
   assertSupabaseConfigured();
   if (!isSupabaseConfigured) return;
-  await ensureSupabaseSession();
   const { error } = await supabase
     .from('app_data')
     .upsert({ key, value, updated_at: new Date().toISOString() }, { onConflict: 'key' });
@@ -65,7 +53,6 @@ export async function saveSupabaseKey(key, value) {
 export async function replaceSupabaseDatabase(database) {
   assertSupabaseConfigured();
   if (!isSupabaseConfigured) return;
-  await ensureSupabaseSession();
   const rows = DATA_KEYS.map((key) => ({ key, value: database[key], updated_at: new Date().toISOString() }));
   const { error } = await supabase.from('app_data').upsert(rows, { onConflict: 'key' });
   if (error) throw new Error(`Unable to save the database to Supabase: ${error.message}`);
