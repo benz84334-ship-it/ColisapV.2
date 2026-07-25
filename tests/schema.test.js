@@ -23,9 +23,14 @@ test('schema.sql defines the main cooperative tables and access policies', () =>
     'create table if not exists public.activity_logs',
     'create table if not exists public.notifications',
     'create table if not exists public.app_data',
-    'create policy "authenticated users can read app data"',
-    'create policy "allow authenticated read access to members"',
-    'create policy "allow anon read access to members"',
+    'create or replace function public.allow_app_access',
+    'receipt_number text not null unique',
+    'collection_id text not null unique',
+    'amount_due numeric(14,2) not null default 0',
+    'monitoring_reference text unique',
+    "select public.allow_app_access('members')",
+    "select public.allow_app_access('app_data')",
+    'alter publication supabase_realtime add table public.app_data',
   ];
 
   for (const statement of requiredStatements) {
