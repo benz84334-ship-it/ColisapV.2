@@ -55,17 +55,67 @@ create table if not exists public.users (
   updated_at timestamptz not null default now()
 );
 
+create table if not exists public.branches (
+  id text primary key,
+  name text not null unique,
+  address text,
+  contact_number text,
+  status text not null default 'Active',
+  metadata jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists public.loan_types (
+  id text primary key,
+  name text not null unique,
+  default_interest_rate numeric(7,2) not null default 5,
+  default_penalty_rate numeric(7,2) not null default 2,
+  status text not null default 'Active',
+  metadata jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists public.payment_methods (
+  id text primary key,
+  name text not null unique,
+  status text not null default 'Active',
+  metadata jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
 create table if not exists public.members (
   id text primary key,
   member_id text not null unique,
   cif_number text unique,
+  application_status text not null default 'New',
+  first_name text,
+  middle_name text,
+  last_name text,
   full_name text not null,
   address text,
   barangay text,
   birthdate date,
+  age_years integer,
+  age_months integer,
   gender text,
+  civil_status text,
   contact_number text,
+  occupation text,
+  employer text,
+  office_address text,
+  religion text,
+  dependents integer not null default 0,
+  savings_account_no text,
   membership_date date,
+  signed_date date,
+  witness_staff text,
+  action_taken text,
+  approving_authority text,
+  approval_date date,
+  findings text,
   status text not null default 'Active',
   status_override text,
   branch text not null default 'Main Office',
@@ -74,6 +124,34 @@ create table if not exists public.members (
   benefit_category text,
   beneficiaries jsonb not null default '[]'::jsonb,
   photo text,
+  metadata jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists public.member_beneficiaries (
+  id text primary key,
+  member_id text not null references public.members(id) on delete cascade,
+  name text not null,
+  age integer,
+  address text,
+  relationship text,
+  sort_order integer not null default 0,
+  metadata jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists public.share_capital_transactions (
+  id text primary key,
+  member_id text not null references public.members(id) on delete cascade,
+  transaction_date date not null default current_date,
+  transaction_type text not null default 'Deposit',
+  amount numeric(14,2) not null default 0,
+  running_balance numeric(14,2) not null default 0,
+  reference_number text,
+  encoded_by text,
+  remarks text,
   metadata jsonb not null default '{}'::jsonb,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
@@ -241,7 +319,12 @@ create table if not exists public.app_data (
 
 alter table public.profiles enable row level security;
 alter table public.users enable row level security;
+alter table public.branches enable row level security;
+alter table public.loan_types enable row level security;
+alter table public.payment_methods enable row level security;
 alter table public.members enable row level security;
+alter table public.member_beneficiaries enable row level security;
+alter table public.share_capital_transactions enable row level security;
 alter table public.loans enable row level security;
 alter table public.collections enable row level security;
 alter table public.payments enable row level security;
@@ -254,7 +337,12 @@ alter table public.app_data enable row level security;
 
 create or replace trigger set_updated_at_profiles before update on public.profiles for each row execute function public.set_updated_at();
 create or replace trigger set_updated_at_users before update on public.users for each row execute function public.set_updated_at();
+create or replace trigger set_updated_at_branches before update on public.branches for each row execute function public.set_updated_at();
+create or replace trigger set_updated_at_loan_types before update on public.loan_types for each row execute function public.set_updated_at();
+create or replace trigger set_updated_at_payment_methods before update on public.payment_methods for each row execute function public.set_updated_at();
 create or replace trigger set_updated_at_members before update on public.members for each row execute function public.set_updated_at();
+create or replace trigger set_updated_at_member_beneficiaries before update on public.member_beneficiaries for each row execute function public.set_updated_at();
+create or replace trigger set_updated_at_share_capital_transactions before update on public.share_capital_transactions for each row execute function public.set_updated_at();
 create or replace trigger set_updated_at_loans before update on public.loans for each row execute function public.set_updated_at();
 create or replace trigger set_updated_at_collections before update on public.collections for each row execute function public.set_updated_at();
 create or replace trigger set_updated_at_payments before update on public.payments for each row execute function public.set_updated_at();
@@ -266,9 +354,16 @@ create or replace trigger set_updated_at_notifications before update on public.n
 
 create index if not exists idx_users_branch on public.users(branch);
 create index if not exists idx_users_status on public.users(status);
+create index if not exists idx_branches_status on public.branches(status);
+create index if not exists idx_loan_types_status on public.loan_types(status);
+create index if not exists idx_payment_methods_status on public.payment_methods(status);
 create index if not exists idx_members_branch on public.members(branch);
 create index if not exists idx_members_status on public.members(status);
 create index if not exists idx_members_barangay on public.members(barangay);
+create index if not exists idx_members_full_name on public.members(full_name);
+create index if not exists idx_member_beneficiaries_member_id on public.member_beneficiaries(member_id);
+create index if not exists idx_share_capital_transactions_member_id on public.share_capital_transactions(member_id);
+create index if not exists idx_share_capital_transactions_date on public.share_capital_transactions(transaction_date desc);
 create index if not exists idx_loans_member_id on public.loans(member_id);
 create index if not exists idx_loans_status on public.loans(status);
 create index if not exists idx_loans_due_date on public.loans(due_date);
@@ -285,7 +380,12 @@ create index if not exists idx_notifications_read on public.notifications(read);
 
 select public.allow_app_access('profiles');
 select public.allow_app_access('users');
+select public.allow_app_access('branches');
+select public.allow_app_access('loan_types');
+select public.allow_app_access('payment_methods');
 select public.allow_app_access('members');
+select public.allow_app_access('member_beneficiaries');
+select public.allow_app_access('share_capital_transactions');
 select public.allow_app_access('loans');
 select public.allow_app_access('collections');
 select public.allow_app_access('payments');
@@ -298,7 +398,12 @@ select public.allow_app_access('app_data');
 
 grant select, insert, update, delete on public.profiles to authenticated, anon;
 grant select, insert, update, delete on public.users to authenticated, anon;
+grant select, insert, update, delete on public.branches to authenticated, anon;
+grant select, insert, update, delete on public.loan_types to authenticated, anon;
+grant select, insert, update, delete on public.payment_methods to authenticated, anon;
 grant select, insert, update, delete on public.members to authenticated, anon;
+grant select, insert, update, delete on public.member_beneficiaries to authenticated, anon;
+grant select, insert, update, delete on public.share_capital_transactions to authenticated, anon;
 grant select, insert, update, delete on public.loans to authenticated, anon;
 grant select, insert, update, delete on public.collections to authenticated, anon;
 grant select, insert, update, delete on public.payments to authenticated, anon;
@@ -338,6 +443,31 @@ insert into public.settings (
   '["Regular Loan","Emergency Loan","Business Loan","Agricultural Loan","Salary Loan"]'::jsonb,
   '["Main Office","Barbaza","Tibiao","Culasi","San Jose"]'::jsonb
 ) on conflict (id) do nothing;
+
+insert into public.branches (id, name)
+values
+  ('BR-0001', 'Main Office'),
+  ('BR-0002', 'Barbaza'),
+  ('BR-0003', 'Tibiao'),
+  ('BR-0004', 'Culasi'),
+  ('BR-0005', 'San Jose')
+on conflict (id) do nothing;
+
+insert into public.loan_types (id, name, default_interest_rate, default_penalty_rate)
+values
+  ('LT-0001', 'Regular Loan', 5, 2),
+  ('LT-0002', 'Emergency Loan', 5, 2),
+  ('LT-0003', 'Business Loan', 5, 2),
+  ('LT-0004', 'Agricultural Loan', 5, 2),
+  ('LT-0005', 'Salary Loan', 5, 2)
+on conflict (id) do nothing;
+
+insert into public.payment_methods (id, name)
+values
+  ('PM-0001', 'Cash'),
+  ('PM-0002', 'GCash'),
+  ('PM-0003', 'Bank Transfer')
+on conflict (id) do nothing;
 
 insert into public.app_data (key, value)
 values
