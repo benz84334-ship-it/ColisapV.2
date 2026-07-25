@@ -16,12 +16,22 @@ async function ensureSupabaseSession() {
   return true;
 }
 
+function assertSupabaseConfigured() {
+  if (isSupabaseConfigured) return;
+  if (import.meta.env.PROD) {
+    throw new Error(
+      'Supabase is not connected. Add VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY in Vercel project environment variables.',
+    );
+  }
+}
+
 export function freshDatabase() {
   const data = generateSeedData();
   return { ...data, reports: [] };
 }
 
 export async function loadDatabaseFromSupabase() {
+  assertSupabaseConfigured();
   if (!isSupabaseConfigured) return freshDatabase();
   await ensureSupabaseSession();
 
@@ -43,6 +53,7 @@ export async function loadDatabaseFromSupabase() {
 }
 
 export async function saveSupabaseKey(key, value) {
+  assertSupabaseConfigured();
   if (!isSupabaseConfigured) return;
   await ensureSupabaseSession();
   const { error } = await supabase
@@ -52,6 +63,7 @@ export async function saveSupabaseKey(key, value) {
 }
 
 export async function replaceSupabaseDatabase(database) {
+  assertSupabaseConfigured();
   if (!isSupabaseConfigured) return;
   await ensureSupabaseSession();
   const rows = DATA_KEYS.map((key) => ({ key, value: database[key], updated_at: new Date().toISOString() }));

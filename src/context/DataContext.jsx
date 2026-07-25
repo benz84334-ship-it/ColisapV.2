@@ -651,6 +651,17 @@ export function DataProvider({ children }) {
         <div className="flex min-h-screen items-center justify-center bg-slate-50 text-sm font-semibold text-slate-600 dark:bg-slate-950 dark:text-slate-300">
           Connecting to Supabase...
         </div>
+      ) : databaseError ? (
+        <div className="flex min-h-screen items-center justify-center bg-slate-50 px-4 dark:bg-slate-950">
+          <div className="w-full max-w-lg rounded-lg border border-rose-200 bg-white p-6 shadow-sm dark:border-rose-500/30 dark:bg-slate-900">
+            <p className="text-sm font-bold uppercase tracking-widest text-rose-600 dark:text-rose-300">Backend not connected</p>
+            <h1 className="mt-3 text-2xl font-black text-slate-950 dark:text-white">Connect Vercel to Supabase</h1>
+            <p className="mt-3 text-sm leading-6 text-slate-600 dark:text-slate-300">{databaseError}</p>
+            <p className="mt-4 text-sm leading-6 text-slate-500 dark:text-slate-400">
+              Run the schema in Supabase SQL Editor, enable anonymous sign-ins, then add the Supabase project URL and publishable key to Vercel.
+            </p>
+          </div>
+        </div>
       ) : children}
     </DataContext.Provider>
   );
