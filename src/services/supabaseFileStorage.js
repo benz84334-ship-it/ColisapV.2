@@ -8,6 +8,17 @@ function assertStorageConfigured() {
   }
 }
 
+function createStorageError(error) {
+  const message = error?.message || '';
+  if (/bucket not found/i.test(message)) {
+    return new Error('Supabase Storage bucket "member-photos" was not found. Run supabase/schema.sql in the Supabase SQL Editor or create that public bucket in Storage.');
+  }
+  if (/row-level security|violates row-level security|not authorized|permission/i.test(message)) {
+    return new Error('Supabase Storage policies are missing for "member-photos". Run supabase/schema.sql in the Supabase SQL Editor.');
+  }
+  return new Error(`Unable to upload member photo: ${message || 'Unknown storage error'}`);
+}
+
 function sanitizeFileName(name = 'photo') {
   const safeName = String(name)
     .toLowerCase()
@@ -33,7 +44,7 @@ export async function uploadMemberPhoto(file, memberId = 'member') {
       upsert: false,
     });
 
-  if (error) throw new Error(`Unable to upload member photo: ${error.message}`);
+  if (error) throw createStorageError(error);
 
   const { data } = supabase.storage.from(MEMBER_PHOTOS_BUCKET).getPublicUrl(path);
   return data.publicUrl;
