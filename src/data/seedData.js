@@ -8,6 +8,8 @@ import {
   MEMBER_STATUSES,
   PAYMENT_TYPES,
   ROLES,
+  AVAILMENT_STATUSES,
+  AVAILMENT_TYPES,
 } from '../utils/constants.js';
 import { getLoanMonthlyPenalty, getLoanOutstandingBalance, getLoanPenaltyDue } from '../utils/analytics.js';
 import { addDays, todayIso } from '../utils/formatters.js';
@@ -531,7 +533,6 @@ function makeReports(payments, loans, members, today) {
 }
 
 function makeAvailments(members, today) {
-  const types = ['New Enrollment', 'Policy Renewal', 'Additional Coverage', 'Benefit Claim', 'Claim Settlement'];
   return members.slice(0, 19).map((member, index) => ({
     id: makeId('AVM', index + 1),
     reference: member.memberId,
@@ -539,9 +540,11 @@ function makeAvailments(members, today) {
     memberId: member.id,
     memberName: member.fullName,
     availmentDate: addDays(today, -(index % Math.max(1, Number(today.slice(8, 10))))),
-    availmentType: types[index % types.length],
+    availmentType: AVAILMENT_TYPES[index % AVAILMENT_TYPES.length],
     amount: 5000 + (index % 8) * 2500,
-    status: index % 4 === 0 ? 'Pending' : 'Completed',
+    status: AVAILMENT_STATUSES[index % AVAILMENT_STATUSES.length],
+    supportingDocuments: index % 3 === 0 ? 'Death certificate, valid ID' : index % 3 === 1 ? 'Medical certificate, valid ID' : 'Claim form, valid ID',
+    remarks: index % 2 === 0 ? 'Filed for review.' : 'Documents received.',
     branch: member.branch,
     createdAt: new Date().toISOString(),
     createdBy: 'System',

@@ -13,7 +13,7 @@ import { useData } from '../../context/DataContext.jsx';
 import { useToast } from '../../context/ToastContext.jsx';
 import { getBranchScopedData, monthlyCollections } from '../../utils/analytics.js';
 import { addDays, formatCurrency, formatDate, todayIso } from '../../utils/formatters.js';
-import { ROLES } from '../../utils/constants.js';
+import { AVAILMENT_STATUSES, ROLES } from '../../utils/constants.js';
 
 const reportTypes = ['Weekly Availment', 'Monthly Availment'];
 const supportedReportTypes = ['Member', ...reportTypes];
@@ -44,7 +44,11 @@ function buildRows(type, data, range) {
   if (type === 'Availment' || type.endsWith('Availment')) {
     return (data.availments || []).filter((item) => inRange(item.availmentDate, range)).map((item) => ({
       id: item.id, memberId: item.memberId, reference: item.reference, member: item.memberName, date: item.availmentDate,
-      type: item.availmentType, amount: item.amount, status: item.status,
+      type: item.availmentType,
+      amount: item.amount,
+      status: item.status,
+      supportingDocuments: item.supportingDocuments || (item.status === 'Approved' ? 'Approved claim form and valid supporting records' : ''),
+      remarks: item.remarks || (item.status === 'Approved' ? 'Approved and ready for release processing.' : ''),
     }));
   }
   if (type === 'Member') {
@@ -160,10 +164,11 @@ export default function Reports() {
   const columns = [
     { key: 'reference', label: 'Reference' },
     { key: 'member', label: 'Member' },
-    { key: 'date', label: 'Date', render: (row) => formatDate(row.date) },
-    { key: 'type', label: 'Type' },
+    { key: 'date', label: 'Date Filed', render: (row) => formatDate(row.date) },
+    { key: 'type', label: 'Type of Availment' },
     { key: 'amount', label: 'Amount', render: (row) => formatCurrency(row.amount), sortKey: (row) => Number(row.amount) },
     { key: 'status', label: 'Status' },
+    { key: 'remarks', label: 'Remarks', render: (row) => row.remarks || 'Not provided' },
   ];
 
   const generateReport = () => {
@@ -257,8 +262,8 @@ export default function Reports() {
         data={reportRows}
         hideHeader
         description={`Period: ${generated?.period || `${activeRange.from} to ${activeRange.to}`}`}
-        filters={[{ key: 'status', label: 'Status', options: [...new Set(reportRows.map((row) => row.status))] }]}
-        searchFields={['reference', 'member', 'type', 'status']}
+        filters={[{ key: 'status', label: 'Status', options: AVAILMENT_STATUSES }]}
+        searchFields={['reference', 'member', 'type', 'status', 'remarks']}
         title={generated?.title || `${filters.type} Report Preview`}
       />
     </div>

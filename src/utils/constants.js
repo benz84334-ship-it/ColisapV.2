@@ -43,6 +43,13 @@ export const MEMBER_STATUSES = ['Active', 'Inactive', 'Dormant'];
 export const LOAN_STATUSES = ['Pending', 'Active', 'Completed', 'Overdue'];
 export const COLLECTION_STATUSES = ['Paid', 'Partial', 'Pending', 'Overdue'];
 export const PAYMENT_STATUSES = ['Completed', 'Pending', 'Reversed'];
+export const AVAILMENT_TYPES = [
+  'Natural Death Claim',
+  'Accidental Death Claim',
+  'Disability Claim',
+  'Burial Assistance',
+];
+export const AVAILMENT_STATUSES = ['Pending', 'Under Review', 'Approved', 'Rejected', 'Released'];
 export const COLLECTION_SCHEDULES = ['Weekly', 'Biweekly', 'Monthly'];
 export const PAYMENT_TYPES = ['Regular', 'Partial', 'Advance', 'Penalty'];
 
@@ -66,6 +73,10 @@ export const STATUS_STYLES = {
   Inactive: 'bg-slate-100 text-slate-700 dark:bg-slate-700 dark:text-slate-200',
   Dormant: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-500/15 dark:text-indigo-200',
   Pending: 'bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-200',
+  'Under Review': 'bg-indigo-100 text-indigo-700 dark:bg-indigo-500/15 dark:text-indigo-200',
+  Approved: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-200',
+  Rejected: 'bg-rose-100 text-rose-700 dark:bg-rose-500/15 dark:text-rose-200',
+  Released: 'bg-blue-100 text-blue-700 dark:bg-blue-500/15 dark:text-blue-200',
   Completed: 'bg-blue-100 text-blue-700 dark:bg-blue-500/15 dark:text-blue-200',
   Overdue: 'bg-rose-100 text-rose-700 dark:bg-rose-500/15 dark:text-rose-200',
   Paid: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-200',

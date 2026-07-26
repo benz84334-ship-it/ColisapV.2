@@ -1,5 +1,3 @@
-create extension if not exists pgcrypto;
-
 create or replace function public.set_updated_at()
 returns trigger
 language plpgsql
@@ -237,15 +235,22 @@ create table if not exists public.availments (
   availment_type text,
   branch text not null default 'Main Office',
   amount numeric(14,2) not null default 0,
-  status text not null default 'Active',
+  status text not null default 'Pending',
   availment_date date,
   policy_number text,
   created_by text,
+  supporting_documents text,
   remarks text,
   metadata jsonb not null default '{}'::jsonb,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+alter table public.availments
+  add column if not exists supporting_documents text;
+
+alter table public.availments
+  alter column status set default 'Pending';
 
 create table if not exists public.reports (
   id text primary key,
@@ -483,6 +488,46 @@ values
   ('notifications', '[]'::jsonb),
   ('dashboard', '{}'::jsonb)
 on conflict (key) do nothing;
+
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values (
+  'member-photos',
+  'member-photos',
+  true,
+  5242880,
+  array['image/jpeg', 'image/png', 'image/webp', 'image/gif']
+)
+on conflict (id) do update
+set
+  public = excluded.public,
+  file_size_limit = excluded.file_size_limit,
+  allowed_mime_types = excluded.allowed_mime_types;
+
+drop policy if exists "member photos public read" on storage.objects;
+drop policy if exists "member photos public insert" on storage.objects;
+drop policy if exists "member photos public update" on storage.objects;
+drop policy if exists "member photos public delete" on storage.objects;
+
+create policy "member photos public read"
+on storage.objects for select
+to authenticated, anon
+using (bucket_id = 'member-photos');
+
+create policy "member photos public insert"
+on storage.objects for insert
+to authenticated, anon
+with check (bucket_id = 'member-photos');
+
+create policy "member photos public update"
+on storage.objects for update
+to authenticated, anon
+using (bucket_id = 'member-photos')
+with check (bucket_id = 'member-photos');
+
+create policy "member photos public delete"
+on storage.objects for delete
+to authenticated, anon
+using (bucket_id = 'member-photos');
 
 do $$
 begin

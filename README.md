@@ -7,7 +7,7 @@ React/Vite application for Barbaza MPC records, loans, collections, payments, re
 The app stores shared records in Supabase through the `public.app_data` table. Browser LocalStorage is only used for the login session.
 
 1. Create or open your Supabase project.
-2. Go to **SQL Editor** and run the full contents of `supabase/schema.sql`.
+2. Go to **SQL Editor** and run the full contents of `supabase/schema.sql`. This creates the shared data table and the public `member-photos` Storage bucket used for uploaded profile photos.
 3. Go to **Authentication > Sign In / Providers** and enable anonymous sign-ins.
 4. Copy `.env.example` to `.env` for local development.
 5. Add your Supabase values:

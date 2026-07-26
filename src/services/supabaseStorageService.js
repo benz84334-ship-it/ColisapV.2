@@ -1,6 +1,25 @@
 import { generateSeedData } from '../data/seedData.js';
 import { isSupabaseConfigured, supabase } from './supabaseClient.js';
 
+const AVAILMENT_TYPES = [
+  'Natural Death Claim',
+  'Accidental Death Claim',
+  'Disability Claim',
+  'Burial Assistance',
+];
+const AVAILMENT_STATUSES = ['Pending', 'Under Review', 'Approved', 'Rejected', 'Released'];
+const LEGACY_AVAILMENT_TYPES = new Set([
+  'New Enrollment',
+  'Policy Renewal',
+  'Additional Coverage',
+  'Benefit Claim',
+  'Claim Settlement',
+  'Regular Monitoring',
+  'Renewal',
+  'Additional Availment',
+]);
+const LEGACY_AVAILMENT_STATUSES = new Set(['Completed', 'Active', 'Overdue', 'Partial', 'Paid']);
+
 export const DATA_KEYS = [
   'users', 'members', 'loans', 'collections', 'payments', 'reports', 'availments',
   'settings', 'activityLogs', 'notifications', 'dashboard',
@@ -26,6 +45,24 @@ function isBlankInitialDatabase(database) {
     if (Array.isArray(value)) return value.length === 0;
     if (value && typeof value === 'object') return Object.keys(value).length === 0;
     return value == null;
+  });
+}
+
+function normalizeAvailments(availments = []) {
+  return availments.map((item, index) => {
+    const status = LEGACY_AVAILMENT_STATUSES.has(item.status)
+      ? AVAILMENT_STATUSES[index % AVAILMENT_STATUSES.length]
+      : item.status || AVAILMENT_STATUSES[0];
+
+    return {
+      ...item,
+      availmentType: LEGACY_AVAILMENT_TYPES.has(item.availmentType)
+      ? AVAILMENT_TYPES[index % AVAILMENT_TYPES.length]
+      : item.availmentType || AVAILMENT_TYPES[0],
+      status,
+      supportingDocuments: item.supportingDocuments || (status === 'Approved' ? 'Approved claim form and valid supporting records' : ''),
+      remarks: item.remarks || (status === 'Approved' ? 'Approved and ready for release processing.' : ''),
+    };
   });
 }
 
@@ -57,6 +94,12 @@ export async function loadDatabaseFromSupabase() {
   if (!Array.isArray(database.users) || database.users.length === 0) {
     database.users = seeded.users;
     await saveSupabaseKey('users', database.users);
+  }
+
+  const normalizedAvailments = normalizeAvailments(database.availments || []);
+  if (JSON.stringify(normalizedAvailments) !== JSON.stringify(database.availments || [])) {
+    database.availments = normalizedAvailments;
+    await saveSupabaseKey('availments', database.availments);
   }
 
   return DATA_KEYS.reduce((nextDatabase, key) => {

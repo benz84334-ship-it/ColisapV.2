@@ -14,6 +14,7 @@ import { formatCurrency, formatDate, todayIso } from '../../utils/formatters.js'
 import { getBranchScopedData } from '../../utils/analytics.js';
 import { getComputedMemberStatus } from '../../utils/memberStatus.js';
 import { buildErrorMap, isPhone, required, uniqueBy } from '../../utils/validation.js';
+import { uploadMemberPhoto } from '../../services/supabaseFileStorage.js';
 
 const BENEFIT_CATEGORY_OPTIONS = ['40K or PHP 40,000.00', '60K or PHP 60,000.00'];
 const APPLICATION_STATUS_OPTIONS = ['New', 'Re-application'];
@@ -336,6 +337,8 @@ export default function Members() {
   const [customerFile, setCustomerFile] = useState(null);
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState(blankMember);
+  const [photoFile, setPhotoFile] = useState(null);
+  const [isSaving, setIsSaving] = useState(false);
   const [errors, setErrors] = useState({});
   const [deleteTarget, setDeleteTarget] = useState(null);
   const computedStatus = useMemo(
@@ -375,6 +378,7 @@ export default function Members() {
     const today = todayIso();
     setEditing(member);
     setForm(memberForForm(member, today, scopedData.members));
+    setPhotoFile(null);
     setErrors({});
     setModalOpen(true);
   };
@@ -421,27 +425,38 @@ export default function Members() {
     return !Object.keys(nextErrors).length;
   };
 
-  const saveMember = () => {
+  const saveMember = async () => {
     if (!validate()) {
       showToast('Please correct the highlighted member fields.', 'error');
       return;
     }
 
+    setIsSaving(true);
     const fullName = formatFullName(form);
-    const nextMember = {
-      ...form,
-      barangay: barangayOnly(form.barangay),
-      fullName,
-      status: computedStatus,
-      dependents: Number(form.dependents || 0),
-      shareCapital: Number(form.shareCapital || 0),
-      beneficiaries: normalizeBeneficiaries(form.beneficiaries),
-    };
+    try {
+      const photoUrl = photoFile ? await uploadMemberPhoto(photoFile, form.memberId || editing?.id) : form.photo;
+      const nextMember = {
+        ...form,
+        barangay: barangayOnly(form.barangay),
+        fullName,
+        status: computedStatus,
+        photo: photoUrl,
+        dependents: Number(form.dependents || 0),
+        shareCapital: Number(form.shareCapital || 0),
+        beneficiaries: normalizeBeneficiaries(form.beneficiaries),
+      };
 
-    if (!editing) return;
-    data.updateMember(editing.id, nextMember, currentUser.username);
-    showToast('Member profile updated.');
-    setModalOpen(false);
+      if (!editing) return;
+      data.updateMember(editing.id, nextMember, currentUser.username);
+      showToast('Member profile updated.');
+      setPhotoFile(null);
+      setModalOpen(false);
+    } catch (error) {
+      console.error(error);
+      showToast(error.message || 'Unable to save member photo.', 'error');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const confirmDelete = () => {
@@ -513,10 +528,10 @@ export default function Members() {
         onClose={() => setModalOpen(false)}
         footer={
           <>
-            <Button variant="secondary" onClick={() => setModalOpen(false)}>
+            <Button variant="secondary" onClick={() => setModalOpen(false)} disabled={isSaving}>
               Cancel
             </Button>
-            <Button onClick={saveMember}>Save Changes</Button>
+            <Button onClick={saveMember} disabled={isSaving}>{isSaving ? 'Saving...' : 'Save Changes'}</Button>
           </>
         }
       >
@@ -558,6 +573,13 @@ export default function Members() {
               <FormField error={errors.lastShareCapitalDepositDate} label="Last Capital Deposit" type="date" value={form.lastShareCapitalDepositDate} onChange={(event) => setForm((current) => ({ ...current, lastShareCapitalDepositDate: event.target.value }))} />
               <FormField as="select" label="Member Status" options={MEMBER_STATUSES} value={computedStatus} disabled onChange={() => {}} />
               <FormField className="md:col-span-2" label="Photo URL" placeholder="Optional image URL" value={form.photo} onChange={(event) => setForm((current) => ({ ...current, photo: event.target.value }))} />
+              <FormField
+                accept="image/png,image/jpeg,image/webp,image/gif"
+                className="md:col-span-2"
+                label="Upload Photo"
+                type="file"
+                onChange={(event) => setPhotoFile(event.target.files?.[0] || null)}
+              />
             </div>
           </Section>
 
