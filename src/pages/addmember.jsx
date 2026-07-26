@@ -1,4 +1,4 @@
-import { supabase } from "../services/supabase";
+import { supabase } from "../services/supabaseClient.js";
 
 function AddMember() {
 
