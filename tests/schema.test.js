@@ -36,10 +36,10 @@ test('schema.sql defines the main cooperative tables and access policies', () =>
     'application_status text not null default',
     'savings_account_no text',
     'transaction_type text not null default',
-    "select public.allow_app_access('members')",
-    "select public.allow_app_access('member_beneficiaries')",
-    "select public.allow_app_access('share_capital_transactions')",
-    "select public.allow_app_access('app_data')",
+    "perform public.allow_app_access('members')",
+    "perform public.allow_app_access('member_beneficiaries')",
+    "perform public.allow_app_access('share_capital_transactions')",
+    "perform public.allow_app_access('app_data')",
     'alter publication supabase_realtime add table public.app_data',
   ];
 

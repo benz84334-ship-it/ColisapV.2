@@ -383,23 +383,26 @@ create index if not exists idx_reports_generated_at on public.reports(generated_
 create index if not exists idx_activity_logs_created_at on public.activity_logs(created_at desc);
 create index if not exists idx_notifications_read on public.notifications(read);
 
-select public.allow_app_access('profiles');
-select public.allow_app_access('users');
-select public.allow_app_access('branches');
-select public.allow_app_access('loan_types');
-select public.allow_app_access('payment_methods');
-select public.allow_app_access('members');
-select public.allow_app_access('member_beneficiaries');
-select public.allow_app_access('share_capital_transactions');
-select public.allow_app_access('loans');
-select public.allow_app_access('collections');
-select public.allow_app_access('payments');
-select public.allow_app_access('availments');
-select public.allow_app_access('reports');
-select public.allow_app_access('settings');
-select public.allow_app_access('activity_logs');
-select public.allow_app_access('notifications');
-select public.allow_app_access('app_data');
+do $$
+begin
+  perform public.allow_app_access('profiles');
+  perform public.allow_app_access('users');
+  perform public.allow_app_access('branches');
+  perform public.allow_app_access('loan_types');
+  perform public.allow_app_access('payment_methods');
+  perform public.allow_app_access('members');
+  perform public.allow_app_access('member_beneficiaries');
+  perform public.allow_app_access('share_capital_transactions');
+  perform public.allow_app_access('loans');
+  perform public.allow_app_access('collections');
+  perform public.allow_app_access('payments');
+  perform public.allow_app_access('availments');
+  perform public.allow_app_access('reports');
+  perform public.allow_app_access('settings');
+  perform public.allow_app_access('activity_logs');
+  perform public.allow_app_access('notifications');
+  perform public.allow_app_access('app_data');
+end $$;
 
 grant select, insert, update, delete on public.profiles to authenticated, anon;
 grant select, insert, update, delete on public.users to authenticated, anon;
