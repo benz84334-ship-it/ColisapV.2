@@ -62,7 +62,6 @@ export default function Contributions() {
       success(`Recorded ${formatCurrency(contributionAmount)} for ${selectedMember.fullName || 'member'}.`);
       setAmount('');
       setRecordedBy('');
-      setMemberId('');
     } catch (saveError) {
       console.error(saveError);
       toastError(saveError.message || 'Unable to save contribution.');
