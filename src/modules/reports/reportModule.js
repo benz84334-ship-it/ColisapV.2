@@ -125,13 +125,16 @@ export function buildReportRows(type, data, range) {
       });
     return rows
       .sort((a, b) => {
-        const aCreated = new Date(a.createdAt || a.date || 0).getTime();
-        const bCreated = new Date(b.createdAt || b.date || 0).getTime();
-        if (bCreated !== aCreated) return bCreated - aCreated;
+        const aTimestamp = new Date(a.sortTimestamp || a.createdAt || a.date || 0).getTime();
+        const bTimestamp = new Date(b.sortTimestamp || b.createdAt || b.date || 0).getTime();
+        if (bTimestamp !== aTimestamp) return bTimestamp - aTimestamp;
 
         const aDate = new Date(a.date || 0).getTime();
         const bDate = new Date(b.date || 0).getTime();
         if (bDate !== aDate) return bDate - aDate;
+
+        const amountDiff = Number(b.amount || 0) - Number(a.amount || 0);
+        if (amountDiff !== 0) return amountDiff;
 
         return String(a.member || '').localeCompare(String(b.member || ''));
       });

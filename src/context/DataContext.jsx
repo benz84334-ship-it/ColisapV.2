@@ -3,7 +3,13 @@ import { createBackupPayload } from '../utils/exporters.js';
 import { nextCifNumber, normalizeContactNumber, todayIso } from '../utils/formatters.js';
 import { getLoanBalance, getLoanMonthlyPenalty, getLoanPenaltyDue } from '../utils/analytics.js';
 import { normalizeBenefitCategory, normalizeBranchName, STORAGE_KEYS } from '../utils/constants.js';
-import { applyComputedMemberStatuses, getComputedMemberStatus, getLastShareCapitalDepositDate, getMembersApproachingStatusChange } from '../utils/memberStatus.js';
+import {
+  applyComputedMemberStatuses,
+  getComputedMemberStatus,
+  getLastShareCapitalDepositDate,
+  getMembersApproachingStatusChange,
+  isInDormancyWarningWindow,
+} from '../utils/memberStatus.js';
 import { sendSms } from '../services/smsService.js';
 import {
   freshDatabase,
@@ -313,6 +319,66 @@ export function DataProvider({ children }) {
     }),
     [database, membersWithComputedStatuses, requestsWithComputedCifNumbers, systemDate],
   );
+
+  useEffect(() => {
+    if (isDatabaseLoading) return;
+
+    const nextMembers = (database.members || []).map((member) => ({
+      ...member,
+      status: getComputedMemberStatus(member, database.loans || [], systemDate),
+    }));
+    const hasStatusChanges = nextMembers.some((member, index) => member.status !== (database.members || [])[index]?.status);
+    if (!hasStatusChanges) return;
+
+    updateKey('members', nextMembers);
+  }, [database.members, database.loans, isDatabaseLoading, systemDate, updateKey]);
+
+  useEffect(() => {
+    if (isDatabaseLoading) return;
+
+    const members = database.members || [];
+    const warningMembers = members.filter((member) => {
+      if (!isInDormancyWarningWindow(member, systemDate)) return false;
+      const warningKey = getLastShareCapitalDepositDate(member);
+      return member.lastDormancyWarningNotifiedFor !== warningKey;
+    });
+
+    if (!warningMembers.length) return;
+
+    const warningMessages = warningMembers.map((member) => {
+      const warningKey = getLastShareCapitalDepositDate(member);
+      return {
+        ...member,
+        lastDormancyWarningNotifiedFor: warningKey,
+      };
+    });
+
+    updateKey('members', members.map((member) => {
+      const nextWarning = warningMessages.find((item) => item.id === member.id);
+      return nextWarning || member;
+    }));
+
+    warningMembers.forEach((member) => {
+      const memberName = member.fullName || 'Member';
+      const remainingDays = 30;
+      addNotification(
+        'Dormancy Warning',
+        `${memberName} has not contributed for 2 months. They have 1 month remaining before the account becomes Dormant.`,
+        'warning',
+        {
+          memberId: member.id,
+          memberName,
+          warningType: 'dormancy_warning',
+          daysUntilDormant: remainingDays,
+        },
+      );
+      addActivity(
+        'Dormancy Warning Sent',
+        `${memberName} was notified that 1 month remains before the account becomes Dormant.`,
+        'System',
+      );
+    });
+  }, [addActivity, addNotification, database.members, isDatabaseLoading, systemDate, updateKey]);
 
   useEffect(() => {
     const theme = database.settings?.theme || 'light';

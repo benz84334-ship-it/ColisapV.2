@@ -1,6 +1,7 @@
 import { todayIso } from './formatters.js';
 
 const LOW_SHARE_CAPITAL_LIMIT = 2000;
+const DORMANCY_WARNING_MONTHS = 2;
 const DORMANT_MONTHS_WITHOUT_DEPOSIT = 3;
 const THIRTY_DAY_DORMANT_MEMBERS = new Set(['justine amar toabe']);
 const DORMANT_REMINDER_DAYS = Array.from({ length: 30 }, (_, index) => 30 - index);
@@ -29,28 +30,44 @@ export function getRequiredShareCapitalForMember(member = {}, loans = []) {
 }
 
 export function hasNoShareCapitalDepositForThreeMonths(member = {}, today = todayIso()) {
+  return getMonthsWithoutShareCapitalDeposit(member, today) >= DORMANT_MONTHS_WITHOUT_DEPOSIT;
+}
+
+export function getMonthsWithoutShareCapitalDeposit(member = {}, today = todayIso()) {
   const lastDeposit = new Date(getLastShareCapitalDepositDate(member));
-  if (Number.isNaN(lastDeposit.getTime())) return false;
+  if (Number.isNaN(lastDeposit.getTime())) return 0;
 
   const threshold = new Date(today);
   if (THIRTY_DAY_DORMANT_MEMBERS.has(String(member.fullName || '').trim().toLowerCase())) {
     threshold.setDate(threshold.getDate() - 30);
-    return lastDeposit <= threshold;
+    return lastDeposit <= threshold ? 3 : 0;
   }
-  threshold.setMonth(threshold.getMonth() - DORMANT_MONTHS_WITHOUT_DEPOSIT);
-  return lastDeposit <= threshold;
+  let months = 0;
+  for (let index = 1; index <= DORMANT_MONTHS_WITHOUT_DEPOSIT; index += 1) {
+    const checkDate = new Date(today);
+    checkDate.setMonth(checkDate.getMonth() - index);
+    if (lastDeposit <= checkDate) months = index;
+  }
+  return months;
+}
+
+export function isInDormancyWarningWindow(member = {}, today = todayIso()) {
+  return getMonthsWithoutShareCapitalDeposit(member, today) >= DORMANCY_WARNING_MONTHS
+    && getMonthsWithoutShareCapitalDeposit(member, today) < DORMANT_MONTHS_WITHOUT_DEPOSIT;
 }
 
 export function getComputedMemberStatus(member = {}, loans = [], today = todayIso()) {
   if (['Active', 'Inactive', 'Dormant'].includes(member.statusOverride)) return member.statusOverride;
   const shareCapital = Number(member.shareCapital || 0);
   const requiredShareCapital = getRequiredShareCapitalForMember(member, loans);
-  const noDepositForThreeMonths = hasNoShareCapitalDepositForThreeMonths(member, today);
+  const monthsWithoutDeposit = getMonthsWithoutShareCapitalDeposit(member, today);
+  const noDepositForThreeMonths = monthsWithoutDeposit >= DORMANT_MONTHS_WITHOUT_DEPOSIT;
+  const inWarningWindow = monthsWithoutDeposit >= DORMANCY_WARNING_MONTHS;
 
-  if (requiredShareCapital > 0 && shareCapital < requiredShareCapital) {
-    return noDepositForThreeMonths ? 'Dormant' : 'Inactive';
-  }
-  if (shareCapital <= LOW_SHARE_CAPITAL_LIMIT && noDepositForThreeMonths) return 'Dormant';
+  if (noDepositForThreeMonths) return 'Dormant';
+  if (inWarningWindow) return 'Dormancy Warning';
+  if (requiredShareCapital > 0 && shareCapital < requiredShareCapital) return 'Inactive';
+  if (shareCapital <= LOW_SHARE_CAPITAL_LIMIT) return 'Inactive';
   return 'Active';
 }
 
@@ -76,9 +93,6 @@ export function getMembersApproachingStatusChange(members = [], loans = [], toda
       const lastDeposit = new Date(getLastShareCapitalDepositDate(member));
       if (Number.isNaN(lastDeposit.getTime())) return null;
 
-      const shareCapital = Number(member.shareCapital || 0);
-      const requiredShareCapital = getRequiredShareCapitalForMember(member, loans);
-
       // Calculate when they would become inactive/dormant
       const dormantThreshold = new Date(lastDeposit);
       if (THIRTY_DAY_DORMANT_MEMBERS.has(String(member.fullName || '').trim().toLowerCase())) {
@@ -90,7 +104,7 @@ export function getMembersApproachingStatusChange(members = [], loans = [], toda
       const daysUntilDormant = Math.ceil((dormantThreshold - new Date(today)) / (1000 * 60 * 60 * 24));
 
       if (daysUntilDormant > 0 && DORMANT_REMINDER_DAYS.includes(daysUntilDormant)) {
-        const projectedStatus = requiredShareCapital > 0 && shareCapital < requiredShareCapital ? 'Inactive' : 'Dormant';
+        const projectedStatus = daysUntilDormant <= 30 && daysUntilDormant > 0 ? 'Dormancy Warning' : 'Dormant';
         return {
           member,
           daysUntilStatusChange: daysUntilDormant,
