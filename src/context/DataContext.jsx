@@ -810,11 +810,8 @@ export function DataProvider({ children }) {
         : item,
       );
 
-      setDatabase((current) => ({
-        ...current,
-        shareCapitalTransactions: nextTransactions,
-        members: nextMembers,
-      }));
+      updateKey('shareCapitalTransactions', nextTransactions);
+      updateKey('members', nextMembers);
 
       await saveSupabaseKey('shareCapitalTransactions', nextTransactions);
       await saveSupabaseKey('members', nextMembers);
