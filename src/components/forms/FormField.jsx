@@ -25,12 +25,13 @@ export default function FormField({
   const isDateField = as === 'input' && props.type === 'date';
   const shared =
     `min-h-11 w-full box-border rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-teal-500 focus:bg-white focus:ring-2 focus:ring-teal-500/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:focus:bg-slate-950 ${isDateField ? 'h-12 appearance-auto pr-11 text-[15px] leading-6 [color-scheme:light] dark:[color-scheme:dark] [&::-webkit-calendar-picker-indicator]:cursor-pointer [&::-webkit-calendar-picker-indicator]:opacity-100' : ''}`;
+  const selectClass = 'appearance-none pr-10 text-ellipsis overflow-hidden whitespace-nowrap';
 
   return (
     <label className={`block ${className}`}>
       {label ? <span className="mb-1.5 block text-sm font-semibold text-slate-700 dark:text-slate-200">{label}</span> : null}
       {as === 'select' ? (
-        <select className={`${shared} ${inputClassName}`} {...props}>
+        <select className={`${shared} ${selectClass} ${inputClassName}`} {...props}>
           {options.map((option) => (
             <option key={option.value ?? option} value={option.value ?? option}>
               {option.label ?? option}

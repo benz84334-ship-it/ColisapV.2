@@ -7,6 +7,7 @@ import {
   FiSettings,
   FiCheckSquare,
   FiClipboard,
+  FiDollarSign,
   FiUsers,
   FiX,
 } from 'react-icons/fi';
@@ -18,6 +19,7 @@ const iconMap = {
   Dashboard: FiHome,
   Members: FiUsers,
   'Claimant Application': FiClipboard,
+  Contributions: FiDollarSign,
   'Request Approval': FiCheckSquare,
   Reports: FiFileText,
   Settings: FiSettings,

@@ -171,6 +171,7 @@ begin
   update public.requests
   set
     request_status = 'Approved',
+    status = 'Approved',
     approved_by = coalesce(p_approved_by, approved_by),
     approval_reason = coalesce(p_approval_reason, approval_reason),
     approved_at = coalesce(approved_at, now()),
@@ -178,6 +179,27 @@ begin
   where request_id = p_request_id
      or id = p_request_id
   returning *;
+end;
+$$;
+
+create or replace function public.sync_request_status_fields()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if coalesce(new.request_status, '') <> coalesce(old.request_status, '') then
+    new.status := new.request_status;
+  elsif coalesce(new.status, '') <> coalesce(old.status, '') then
+    new.request_status := new.status;
+  end if;
+
+  if coalesce(new.request_status, '') = 'Approved' then
+    new.status := 'Approved';
+  end if;
+
+  return new;
 end;
 $$;
 
@@ -725,6 +747,7 @@ set key = coalesce(key, id, 'main')
 where key is null;
 alter table public.app_data alter column key set default 'main';
 alter table public.app_data alter column key set not null;
+alter table public.app_data drop constraint if exists app_data_key_unique;
 alter table public.app_data add constraint app_data_key_unique unique (key);
 
 insert into public.app_data (id, key)
@@ -806,9 +829,18 @@ drop trigger if exists set_request_id_from_request_trigger on public.requests;
 create trigger set_request_id_from_request_trigger before insert on public.requests
 for each row execute function public.set_request_id_from_request();
 
+drop trigger if exists sync_request_status_fields_trigger on public.requests;
+create trigger sync_request_status_fields_trigger
+before insert or update on public.requests
+for each row execute function public.sync_request_status_fields();
+
 drop trigger if exists sync_approved_request_to_member_trigger on public.requests;
 create trigger sync_approved_request_to_member_trigger
 after update on public.requests
 for each row
 when (new.request_status = 'Approved')
 execute function public.sync_approved_request_to_member();
+
+update public.requests
+set status = request_status
+where coalesce(status, '') <> coalesce(request_status, '');

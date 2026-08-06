@@ -557,6 +557,7 @@ export default function Members() {
       { key: 'barangay', label: 'Barangay / Municipality', className: 'min-w-52 max-w-64', cellClassName: 'min-w-52 max-w-64 whitespace-normal', render: (row) => barangayOnly(row.barangay) },
       { key: 'contactNumber', label: 'Contact', className: 'whitespace-nowrap', cellClassName: 'whitespace-nowrap' },
       { key: 'membershipDate', label: 'Membership Date', className: 'whitespace-nowrap', cellClassName: 'whitespace-nowrap', render: (row) => formatDate(row.membershipDate) },
+      { key: 'shareCapital', label: 'Amount', className: 'whitespace-nowrap text-center', cellClassName: 'whitespace-nowrap text-center', render: (row) => formatCurrency(Number(row.shareCapital || 0)) },
       { key: 'status', label: 'Status', className: 'whitespace-nowrap', cellClassName: 'whitespace-nowrap', render: (row) => <Badge>{row.status}</Badge> },
     ],
     [],

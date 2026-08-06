@@ -9,6 +9,7 @@ const Login = lazy(() => import('../pages/auth/Login.jsx'));
 const Dashboard = lazy(() => import('../pages/dashboard/Dashboard.jsx'));
 const Members = lazy(() => import('../pages/members/Members.jsx'));
 const ClaimantApplication = lazy(() => import('../pages/claimant/ClaimantApplication.jsx'));
+const Contributions = lazy(() => import('../pages/contributions/Contributions.jsx'));
 const DormancyNotifications = lazy(() => import('../pages/dormancy/DormancyNotifications.jsx'));
 const Reports = lazy(() => import('../pages/reports/Reports.jsx'));
 const Settings = lazy(() => import('../pages/settings/Settings.jsx'));
@@ -36,6 +37,7 @@ export default function AppRoutes() {
         <Route element={<ProtectedRoute roles={[ROLES.STAFF]} />}>
           <Route element={<AppLayout />}>
             <Route element={<ClaimantApplication />} path="/claimant-application" />
+            <Route element={<Contributions />} path="/contributions" />
             <Route element={<Members />} path="/request-member" />
           </Route>
         </Route>

@@ -30,6 +30,8 @@ export default function DataTable({
   pageSize = 10,
   hideHeader = false,
   hideHeaderText = false,
+  hideTools = false,
+  hideExportTools = false,
 }) {
   const [query, setQuery] = useState('');
   const [filterValues, setFilterValues] = useState({});
@@ -87,53 +89,57 @@ export default function DataTable({
               {description ? <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{description}</p> : null}
             </div>
           ) : <div />}
-          <div className="flex flex-wrap items-center gap-2 no-print">
-            {addAction}
-            <button type="button" className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:hover:border-slate-600 dark:hover:bg-slate-800" onClick={() => exportToCSV(sorted, columns, `${title || 'export'}.csv`)}>
-              <FiDownload />
-              CSV
-            </button>
-            <button type="button" className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:hover:border-slate-600 dark:hover:bg-slate-800" onClick={() => exportToExcel(sorted, columns, `${title || 'export'}.xls`)}>
-              <FiFile />
-              Excel
-            </button>
-            <button type="button" className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:hover:border-slate-600 dark:hover:bg-slate-800" onClick={() => printCurrentView()}>
-              <FiPrinter />
-              Print
-            </button>
-          </div>
+          {hideExportTools ? null : (
+            <div className="flex flex-wrap items-center gap-2 no-print">
+              {addAction}
+              <button type="button" className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:hover:border-slate-600 dark:hover:bg-slate-800" onClick={() => exportToCSV(sorted, columns, `${title || 'export'}.csv`)}>
+                <FiDownload />
+                CSV
+              </button>
+              <button type="button" className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:hover:border-slate-600 dark:hover:bg-slate-800" onClick={() => exportToExcel(sorted, columns, `${title || 'export'}.xls`)}>
+                <FiFile />
+                Excel
+              </button>
+              <button type="button" className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:hover:border-slate-600 dark:hover:bg-slate-800" onClick={() => printCurrentView()}>
+                <FiPrinter />
+                Print
+              </button>
+            </div>
+          )}
         </div>
       ) : null}
 
-      <div className="grid gap-4 border-b border-slate-200 bg-white p-5 no-print dark:border-slate-800 dark:bg-slate-950 lg:grid-cols-[minmax(0,1.7fr)_minmax(22rem,1fr)]">
-        <label className="relative block">
-          <FiSearch className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-          <input
-            className="h-11 w-full rounded-2xl border border-slate-200 bg-slate-50 pl-10 pr-3 text-sm outline-none transition placeholder:text-slate-400 focus:border-teal-500 focus:bg-white focus:ring-2 focus:ring-teal-500/20 dark:border-slate-700 dark:bg-slate-900 dark:text-white dark:focus:bg-slate-950"
-            placeholder={searchPlaceholder}
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-          />
-        </label>
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-[repeat(auto-fit,minmax(12rem,1fr))]">
-          {filters.map((filter) => (
-            <select
-              key={filter.key}
-              aria-label={filter.label}
-              className="h-11 w-full min-w-0 rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm font-medium text-slate-700 outline-none transition focus:border-teal-500 focus:bg-white focus:ring-2 focus:ring-teal-500/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:focus:bg-slate-950"
-              value={filterValues[filter.key] || 'All'}
-              onChange={(event) => setFilterValues((current) => ({ ...current, [filter.key]: event.target.value }))}
-            >
-              <option value="All">{filter.label}: All</option>
-              {filter.options.map((option) => (
-                <option key={option} value={option}>
-                  {option}
-                </option>
-              ))}
-            </select>
-          ))}
+      {hideTools ? null : (
+        <div className="grid gap-4 border-b border-slate-200 bg-white p-5 no-print dark:border-slate-800 dark:bg-slate-950 lg:grid-cols-[minmax(0,1.7fr)_minmax(22rem,1fr)]">
+          <label className="relative block">
+            <FiSearch className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input
+              className="h-11 w-full rounded-2xl border border-slate-200 bg-slate-50 pl-10 pr-3 text-sm outline-none transition placeholder:text-slate-400 focus:border-teal-500 focus:bg-white focus:ring-2 focus:ring-teal-500/20 dark:border-slate-700 dark:bg-slate-900 dark:text-white dark:focus:bg-slate-950"
+              placeholder={searchPlaceholder}
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+            />
+          </label>
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-[repeat(auto-fit,minmax(12rem,1fr))]">
+            {filters.map((filter) => (
+              <select
+                key={filter.key}
+                aria-label={filter.label}
+                className="h-11 w-full min-w-0 rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm font-medium text-slate-700 outline-none transition focus:border-teal-500 focus:bg-white focus:ring-2 focus:ring-teal-500/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:focus:bg-slate-950"
+                value={filterValues[filter.key] || 'All'}
+                onChange={(event) => setFilterValues((current) => ({ ...current, [filter.key]: event.target.value }))}
+              >
+                <option value="All">{filter.label}: All</option>
+                {filter.options.map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </select>
+            ))}
+          </div>
         </div>
-      </div>
+      )}
 
       <div className="table-scroll overflow-x-auto">
         <table className="min-w-full divide-y divide-slate-200 text-left text-sm dark:divide-slate-800">

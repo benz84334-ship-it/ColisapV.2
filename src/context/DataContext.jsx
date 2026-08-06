@@ -216,6 +216,22 @@ function stripRequestIdentity(request = {}) {
   return rest;
 }
 
+function normalizeBeneficiaries(beneficiaries) {
+  if (!Array.isArray(beneficiaries)) return [];
+  return beneficiaries
+    .filter(Boolean)
+    .map((beneficiary) => ({
+      id: beneficiary.id ?? beneficiary.beneficiaryId ?? '',
+      name: beneficiary.name ?? beneficiary.fullName ?? '',
+      ageYears: beneficiary.ageYears ?? beneficiary.age ?? '',
+      address: beneficiary.address ?? '',
+      relationship: beneficiary.relationship ?? '',
+      relationshipOther: beneficiary.relationshipOther ?? '',
+      sortOrder: beneficiary.sortOrder ?? beneficiary.sort_order ?? 0,
+      metadata: beneficiary.metadata ?? {},
+    }));
+}
+
 export function DataProvider({ children }) {
   const [database, setDatabase] = useState(() => freshDatabase());
   const [isDatabaseLoading, setIsDatabaseLoading] = useState(true);

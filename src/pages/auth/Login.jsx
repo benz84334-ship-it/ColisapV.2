@@ -15,7 +15,7 @@ export default function Login() {
   const { showToast } = useToast();
   const location = useLocation();
   const navigate = useNavigate();
-  const [form, setForm] = useState({ username: 'admin', password: 'Admin1245', remember: true });
+  const [form, setForm] = useState({ username: '', password: '' });
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
 
@@ -94,12 +94,20 @@ export default function Login() {
           <h2 className="text-2xl font-black text-slate-950 dark:text-white">Sign in</h2>
           <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">Enter your assigned account to continue.</p>
 
-          <form className="mt-6 space-y-4" onSubmit={handleSubmit}>
+          <form className="mt-6 space-y-4" autoComplete="off" onSubmit={handleSubmit}>
+            <div className="sr-only" aria-hidden="true">
+              <input autoComplete="username" name="login-username-dummy" tabIndex={-1} type="text" />
+              <input autoComplete="new-password" name="login-password-dummy" tabIndex={-1} type="password" />
+            </div>
             <div className="relative">
               <FiUser className="absolute left-3 top-[2.55rem] text-slate-400" />
               <FormField
                 label="Username"
+                autoComplete="off"
+                name="login-username"
                 inputClassName="pl-10"
+                spellCheck={false}
+                autoCapitalize="none"
                 value={form.username}
                 onChange={(event) => {
                   setError('');
@@ -111,8 +119,11 @@ export default function Login() {
               <FiLock className="absolute left-3 top-[2.55rem] text-slate-400" />
               <FormField
                 label="Password"
+                autoComplete="new-password"
+                name="login-password"
                 inputClassName="pl-10 pr-10"
                 type={showPassword ? 'text' : 'password'}
+                spellCheck={false}
                 value={form.password}
                 onChange={(event) => {
                   setError('');
@@ -130,21 +141,6 @@ export default function Login() {
             </div>
 
             {error ? <p className="rounded-lg bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700 dark:bg-rose-500/10 dark:text-rose-200">{error}</p> : null}
-
-            <div className="flex items-center justify-between gap-3">
-              <label className="inline-flex items-center gap-2 text-sm font-semibold text-slate-600 dark:text-slate-300">
-                <input
-                  checked={form.remember}
-                  className="h-4 w-4 rounded border-slate-300 text-teal-700 focus:ring-teal-600"
-                  type="checkbox"
-                  onChange={(event) => {
-                    setError('');
-                    setForm((current) => ({ ...current, remember: event.target.checked }));
-                  }}
-                />
-                Remember me
-              </label>
-            </div>
 
             <Button className="w-full" type="submit">
               Login
