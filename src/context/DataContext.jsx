@@ -818,6 +818,8 @@ export function DataProvider({ children }) {
 
       await saveSupabaseKey('shareCapitalTransactions', nextTransactions);
       await saveSupabaseKey('members', nextMembers);
+      const refreshedDatabase = await loadDatabaseFromSupabase();
+      setDatabase(refreshedDatabase);
 
       addActivity(
         'Recorded Contribution',
