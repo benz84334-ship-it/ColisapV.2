@@ -1,6 +1,8 @@
 import { useMemo, useState } from 'react';
+import { FiSearch } from 'react-icons/fi';
 import Button from '../../components/ui/Button.jsx';
 import FormField from '../../components/forms/FormField.jsx';
+import Modal from '../../components/ui/Modal.jsx';
 import PageHeader from '../../components/ui/PageHeader.jsx';
 import { useData } from '../../context/DataContext.jsx';
 import { useToast } from '../../context/ToastContext.jsx';
@@ -23,6 +25,8 @@ export default function Contributions() {
   const [contributionDate, setContributionDate] = useState(todayIso());
   const [recordedBy, setRecordedBy] = useState('');
   const [saving, setSaving] = useState(false);
+  const [memberSearchOpen, setMemberSearchOpen] = useState(false);
+  const [memberSearch, setMemberSearch] = useState('');
 
   const members = Array.isArray(data.members) ? data.members : [];
 
@@ -30,6 +34,15 @@ export default function Contributions() {
     () => members.find((member) => member.id === memberId || member.memberId === memberId) || null,
     [memberId, members],
   );
+
+  const searchableMembers = useMemo(() => {
+    const query = memberSearch.trim().toLowerCase();
+    if (!query) return members.slice(0, 50);
+    return members.filter((member) => {
+      const haystack = `${member.fullName || ''} ${member.memberId || ''} ${member.cifNumber || ''} ${member.barangay || ''}`.toLowerCase();
+      return haystack.includes(query);
+    }).slice(0, 50);
+  }, [memberSearch, members]);
 
   const handleSaveContribution = async (event) => {
     event.preventDefault();
@@ -78,28 +91,36 @@ export default function Contributions() {
       />
       <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-950">
         <form className="grid gap-4 lg:grid-cols-4 lg:items-end" autoComplete="off" onSubmit={handleSaveContribution}>
-          <FormField
-            label="Member"
-            as="select"
-            autoComplete="off"
-            value={memberId}
-            onChange={(event) => setMemberId(event.target.value)}
-            options={members.map((member) => ({
-              value: member.id,
-              label: `${member.fullName}${member.cifNumber ? ` (${member.cifNumber})` : ''}`,
-            }))}
-          >
-            <option value="">Select member</option>
-          </FormField>
+          <div className="space-y-1 lg:col-span-2">
+            <span className="block text-sm font-semibold text-slate-700 dark:text-slate-200">Member</span>
+            <div className="relative">
+              <button
+                className="min-h-10 w-full rounded-2xl border border-teal-500 bg-white px-4 py-2 pr-12 text-left text-[15px] text-slate-700 shadow-sm transition hover:border-teal-600 hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-teal-500/20 dark:border-teal-500 dark:bg-slate-950 dark:text-slate-100 dark:hover:bg-slate-900"
+                type="button"
+                onClick={() => {
+                  setMemberSearch(memberSearch || selectedMember?.fullName || '');
+                  setMemberSearchOpen(true);
+                }}
+              >
+                <span className="block truncate leading-5">
+                  {selectedMember?.fullName
+                    ? `${selectedMember.fullName}${selectedMember.cifNumber ? ` (${selectedMember.cifNumber})` : ''}`
+                    : 'Search member'}
+                </span>
+              </button>
+              <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-slate-500 dark:text-slate-300">
+                <FiSearch />
+              </span>
+            </div>
+          </div>
 
           <FormField
             label="Amount"
-            type="number"
-            min="0"
-            step="0.01"
+            type="text"
+            inputMode="decimal"
             autoComplete="off"
             value={amount}
-            onChange={(event) => setAmount(event.target.value)}
+            onChange={(event) => setAmount(event.target.value.replace(/[^0-9.]/g, ''))}
             placeholder="Enter contribution amount"
           />
 
@@ -147,6 +168,57 @@ export default function Contributions() {
           </div>
         </div>
       </section>
+
+      <Modal
+        open={memberSearchOpen}
+        title="Search Member"
+        description="Search by member name, CIFK number, or barangay, then pick the member for this contribution."
+        maxWidth="max-w-2xl"
+        onClose={() => setMemberSearchOpen(false)}
+        footer={
+          <Button variant="secondary" onClick={() => setMemberSearchOpen(false)}>
+            Close
+          </Button>
+        }
+      >
+        <div className="space-y-4">
+          <FormField
+            autoComplete="off"
+            label="Search"
+            placeholder="Type member name or CIFK number"
+            value={memberSearch}
+            onChange={(event) => setMemberSearch(event.target.value)}
+          />
+          <div className="max-h-96 overflow-y-auto rounded-2xl border border-slate-200 dark:border-slate-800">
+            {searchableMembers.length ? searchableMembers.map((member) => (
+              <button
+                key={member.id}
+                className={`flex w-full items-center justify-between gap-3 border-b border-slate-100 px-4 py-3 text-left transition last:border-b-0 hover:bg-teal-50 dark:border-slate-800 dark:hover:bg-teal-500/10 ${
+                  member.id === memberId ? 'bg-teal-50 dark:bg-teal-500/10' : 'bg-white dark:bg-slate-950'
+                }`}
+                type="button"
+                onClick={() => {
+                  setMemberId(member.id);
+                  setMemberSearch(member.fullName || '');
+                  setMemberSearchOpen(false);
+                }}
+              >
+                <span className="min-w-0">
+                  <span className="block truncate font-semibold text-slate-950 dark:text-white">{member.fullName}</span>
+                  <span className="block truncate text-xs text-slate-500 dark:text-slate-400">
+                    {member.cifNumber || member.memberId || 'No CIFK'} {member.barangay ? `• ${member.barangay}` : ''}
+                  </span>
+                </span>
+                <span className="shrink-0 rounded-full bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-700 dark:bg-slate-800 dark:text-slate-200">
+                  {formatCurrency(Number(member.shareCapital || 0))}
+                </span>
+              </button>
+            )) : (
+              <p className="px-4 py-6 text-center text-sm text-slate-500 dark:text-slate-400">No member found.</p>
+            )}
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }
