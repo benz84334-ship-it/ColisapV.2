@@ -315,7 +315,7 @@ begin
     status = excluded.status,
     status_override = excluded.status_override,
     branch = excluded.branch,
-    share_capital = excluded.share_capital,
+    share_capital = coalesce(nullif(excluded.share_capital, 0), public.members.share_capital),
     last_share_capital_deposit_date = excluded.last_share_capital_deposit_date,
     benefit_category = excluded.benefit_category,
     beneficiaries = excluded.beneficiaries,
@@ -324,6 +324,44 @@ begin
     updated_at = now();
 
   return new;
+end;
+$$;
+
+create or replace function public.sync_member_share_capital_from_transactions()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  target_member_id text;
+begin
+  if tg_op = 'DELETE' then
+    target_member_id := old.member_id;
+  else
+    target_member_id := new.member_id;
+  end if;
+
+  if coalesce(target_member_id, '') = '' then
+    return case when tg_op = 'DELETE' then old else new end;
+  end if;
+
+  update public.members m
+  set
+    share_capital = coalesce((
+      select sum(coalesce(t.amount, 0))
+      from public.share_capital_transactions t
+      where t.member_id = target_member_id
+    ), 0),
+    last_share_capital_deposit_date = coalesce((
+      select max(t.transaction_date)
+      from public.share_capital_transactions t
+      where t.member_id = target_member_id
+    ), m.last_share_capital_deposit_date),
+    updated_at = now()
+  where m.id = target_member_id;
+
+  return case when tg_op = 'DELETE' then old else new end;
 end;
 $$;
 
@@ -670,6 +708,24 @@ alter table public.availments add column if not exists total_funeral_expenses nu
 alter table public.availments add column if not exists supporting_documents text;
 alter table public.availments add column if not exists remarks text;
 
+update public.members m
+set
+  share_capital = coalesce((
+    select sum(coalesce(t.amount, 0))
+    from public.share_capital_transactions t
+    where t.member_id = m.id
+  ), 0),
+  last_share_capital_deposit_date = coalesce((
+    select max(t.transaction_date)
+    from public.share_capital_transactions t
+    where t.member_id = m.id
+  ), m.last_share_capital_deposit_date)
+where exists (
+  select 1
+  from public.share_capital_transactions t
+  where t.member_id = m.id
+);
+
 create table if not exists public.reports (
   id text primary key,
   title text not null,
@@ -797,6 +853,30 @@ drop trigger if exists set_updated_at_requests on public.requests;
 create trigger set_updated_at_requests before update on public.requests for each row execute function public.set_updated_at();
 drop trigger if exists set_updated_at_share_capital_transactions on public.share_capital_transactions;
 create trigger set_updated_at_share_capital_transactions before update on public.share_capital_transactions for each row execute function public.set_updated_at();
+drop trigger if exists sync_member_share_capital_from_transactions_on_insert on public.share_capital_transactions;
+create trigger sync_member_share_capital_from_transactions_on_insert
+after insert on public.share_capital_transactions
+for each row execute function public.sync_member_share_capital_from_transactions();
+drop trigger if exists sync_member_share_capital_from_transactions_on_update on public.share_capital_transactions;
+create trigger sync_member_share_capital_from_transactions_on_update
+after update on public.share_capital_transactions
+for each row execute function public.sync_member_share_capital_from_transactions();
+drop trigger if exists sync_member_share_capital_from_transactions_on_delete on public.share_capital_transactions;
+create trigger sync_member_share_capital_from_transactions_on_delete
+after delete on public.share_capital_transactions
+for each row execute function public.sync_member_share_capital_from_transactions();
+update public.members m
+set
+  share_capital = coalesce((
+    select sum(coalesce(t.amount, 0))
+    from public.share_capital_transactions t
+    where t.member_id = m.id
+  ), 0),
+  last_share_capital_deposit_date = coalesce((
+    select max(t.transaction_date)
+    from public.share_capital_transactions t
+    where t.member_id = m.id
+  ), m.last_share_capital_deposit_date);
 drop trigger if exists set_updated_at_loans on public.loans;
 create trigger set_updated_at_loans before update on public.loans for each row execute function public.set_updated_at();
 drop trigger if exists set_updated_at_collections on public.collections;

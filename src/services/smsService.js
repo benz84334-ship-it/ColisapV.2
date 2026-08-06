@@ -35,5 +35,5 @@ export async function sendSms(to, message, meta = {}) {
     throw error;
   }
 
-  throw new Error('SMS sending is not available in the no-backend Supabase-only build.');
+  return createLocalSmsFallback(recipient, body, meta);
 }

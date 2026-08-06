@@ -41,7 +41,7 @@ export default function DormancyNotifications() {
   const { currentUser } = useAuth();
   const [filter, setFilter] = useState('All');
   const [backendLogs, setBackendLogs] = useState([]);
-  const [backendError] = useState('SMS delivery is not available in the Supabase-only build.');
+  const [backendError] = useState('SMS delivery is running in local fallback mode.');
   const [selectedMemberId, setSelectedMemberId] = useState('');
   const [manualMessage, setManualMessage] = useState('');
   const [manualMessageTouched, setManualMessageTouched] = useState(false);
@@ -134,7 +134,7 @@ export default function DormancyNotifications() {
       });
     } catch (error) {
       const messageText = String(error?.message || '').trim();
-      const friendlyMessage = messageText || 'SMS sending is not available in this build.';
+      const friendlyMessage = messageText || 'SMS could not be sent.';
       setManualState({ status: 'error', message: friendlyMessage });
     }
   };

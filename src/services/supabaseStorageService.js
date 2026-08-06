@@ -105,6 +105,39 @@ function normalizeAvailments(availments = []) {
   });
 }
 
+function recomputeMemberShareCapital(members = [], shareCapitalTransactions = []) {
+  const transactionTotals = new Map();
+  const latestDepositDates = new Map();
+
+  shareCapitalTransactions.forEach((transaction) => {
+    const memberId = String(transaction.memberId || '').trim();
+    if (!memberId) return;
+
+    const amount = Number(transaction.amount || 0);
+    transactionTotals.set(memberId, (transactionTotals.get(memberId) || 0) + amount);
+
+    const transactionDate = transaction.transactionDate ? new Date(transaction.transactionDate) : null;
+    if (!transactionDate || Number.isNaN(transactionDate.getTime())) return;
+
+    const currentLatest = latestDepositDates.get(memberId);
+    if (!currentLatest || transactionDate > currentLatest) {
+      latestDepositDates.set(memberId, transactionDate);
+    }
+  });
+
+  return members.map((member) => {
+    const memberId = String(member.id || '').trim();
+    const hasTransactions = transactionTotals.has(memberId);
+    return {
+      ...member,
+      shareCapital: hasTransactions ? transactionTotals.get(memberId) : Number(member.shareCapital || 0),
+      lastShareCapitalDepositDate: latestDepositDates.has(memberId)
+        ? latestDepositDates.get(memberId).toISOString().split('T')[0]
+        : member.lastShareCapitalDepositDate,
+    };
+  });
+}
+
 function mergeUsers(currentUsers = [], seededUsers = []) {
   const merged = [...currentUsers];
   const coreUsernames = new Set(['admin', 'manager', 'staff']);
@@ -971,6 +1004,7 @@ export async function loadDatabaseFromSupabase() {
       beneficiaries: beneficiariesByMember.get(String(member.id || '').trim()) || member.beneficiaries || [],
     }));
   }
+  nextDatabase.members = recomputeMemberShareCapital(nextDatabase.members || [], nextDatabase.shareCapitalTransactions || []);
   nextDatabase.availments = normalizeAvailments(nextDatabase.availments || []);
   return nextDatabase;
 }

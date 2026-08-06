@@ -435,7 +435,12 @@ function memberForForm(member, today) {
   };
 }
 
-function buildMemberPayload(form, { photoUrl, status, branch, cifNumber } = {}) {
+function buildMemberPayload(form, { photoUrl, status, branch, cifNumber, existingMember } = {}) {
+  const existingShareCapital = existingMember?.shareCapital;
+  const shareCapital = form.shareCapital === '' || form.shareCapital === undefined || form.shareCapital === null
+    ? Number(existingShareCapital || 0)
+    : Number(form.shareCapital || 0);
+
   return {
     id: form.id || '',
     memberId: form.memberId || '',
@@ -478,7 +483,7 @@ function buildMemberPayload(form, { photoUrl, status, branch, cifNumber } = {}) 
     status: status || form.status || 'Pending',
     statusOverride: form.statusOverride || '',
     branch: branch || form.branch || 'Main Office',
-    shareCapital: Number(form.shareCapital || 0),
+    shareCapital,
     lastShareCapitalDepositDate: form.lastShareCapitalDepositDate || '',
     benefitCategory: normalizeBenefitCategory(form.benefitCategory || MEMBER_BENEFIT_CATEGORIES[0]),
     photo: photoUrl || form.photo || '',
@@ -555,9 +560,15 @@ export default function Members() {
         ),
       },
       { key: 'barangay', label: 'Barangay / Municipality', className: 'min-w-52 max-w-64', cellClassName: 'min-w-52 max-w-64 whitespace-normal', render: (row) => barangayOnly(row.barangay) },
+      {
+        key: 'shareCapital',
+        label: 'Share Capital',
+        className: 'whitespace-nowrap',
+        cellClassName: 'whitespace-nowrap',
+        render: (row) => formatCurrency(Number(row.shareCapital || 0)),
+      },
       { key: 'contactNumber', label: 'Contact', className: 'whitespace-nowrap', cellClassName: 'whitespace-nowrap' },
       { key: 'membershipDate', label: 'Membership Date', className: 'whitespace-nowrap', cellClassName: 'whitespace-nowrap', render: (row) => formatDate(row.membershipDate) },
-      { key: 'shareCapital', label: 'Amount', className: 'whitespace-nowrap text-center', cellClassName: 'whitespace-nowrap text-center', render: (row) => formatCurrency(Number(row.shareCapital || 0)) },
       { key: 'status', label: 'Status', className: 'whitespace-nowrap', cellClassName: 'whitespace-nowrap', render: (row) => <Badge>{row.status}</Badge> },
     ],
     [],
@@ -736,6 +747,7 @@ export default function Members() {
         status: isApprover ? computedStatus : 'Pending',
         branch: currentForm.branch || currentUser?.branch || 'Main Office',
         cifNumber: generatedCifNumber,
+        existingMember: editing,
       });
 
       if (isRequestMemberPage && requestTarget) {

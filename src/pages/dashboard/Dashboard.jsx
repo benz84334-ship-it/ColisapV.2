@@ -193,9 +193,7 @@ export default function Dashboard() {
                   const statusTone = isLiveSuccess ? 'success' : isFailed ? 'danger' : isSkipped ? 'warning' : 'info';
                   const statusLabel = isLiveSuccess
                     ? sentToday ? 'SMS Sent Today' : 'SMS Sent Before'
-                    : isLocalSave
-                      ? sentToday ? 'Locally Saved Today' : 'Locally Saved Before'
-                      : isFailed
+                    : isFailed
                         ? 'SMS Failed'
                         : isSkipped
                           ? 'SMS Skipped'
@@ -220,13 +218,11 @@ export default function Dashboard() {
                           <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
                             {isLiveSuccess
                               ? `Sent ${debug.reminderDay} day reminder on ${formatDateTime(debug.createdAt)}`
-                              : isLocalSave
-                                ? `Saved locally on ${formatDateTime(debug.createdAt)}`
-                                : isFailed
+                              : isFailed
                                   ? debug.error
                                   : isSkipped
                                     ? debug.error
-                                    : 'SMS history available'}
+                                    : null}
                           </p>
                         ) : null}
                       </div>

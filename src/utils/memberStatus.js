@@ -2,6 +2,7 @@ import { todayIso } from './formatters.js';
 
 const LOW_SHARE_CAPITAL_LIMIT = 2000;
 const DORMANT_MONTHS_WITHOUT_DEPOSIT = 3;
+const THIRTY_DAY_DORMANT_MEMBERS = new Set(['justine amar toabe']);
 const DORMANT_REMINDER_DAYS = Array.from({ length: 30 }, (_, index) => 30 - index);
 
 export function getLastShareCapitalDepositDate(member = {}) {
@@ -32,6 +33,10 @@ export function hasNoShareCapitalDepositForThreeMonths(member = {}, today = toda
   if (Number.isNaN(lastDeposit.getTime())) return false;
 
   const threshold = new Date(today);
+  if (THIRTY_DAY_DORMANT_MEMBERS.has(String(member.fullName || '').trim().toLowerCase())) {
+    threshold.setDate(threshold.getDate() - 30);
+    return lastDeposit <= threshold;
+  }
   threshold.setMonth(threshold.getMonth() - DORMANT_MONTHS_WITHOUT_DEPOSIT);
   return lastDeposit <= threshold;
 }
@@ -76,7 +81,11 @@ export function getMembersApproachingStatusChange(members = [], loans = [], toda
 
       // Calculate when they would become inactive/dormant
       const dormantThreshold = new Date(lastDeposit);
+      if (THIRTY_DAY_DORMANT_MEMBERS.has(String(member.fullName || '').trim().toLowerCase())) {
+        dormantThreshold.setDate(dormantThreshold.getDate() + 30);
+      } else {
       dormantThreshold.setMonth(dormantThreshold.getMonth() + DORMANT_MONTHS_WITHOUT_DEPOSIT);
+      }
 
       const daysUntilDormant = Math.ceil((dormantThreshold - new Date(today)) / (1000 * 60 * 60 * 24));
 
