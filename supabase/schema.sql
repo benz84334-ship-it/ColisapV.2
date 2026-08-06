@@ -335,6 +335,8 @@ set search_path = public
 as $$
 declare
   target_member_id text;
+  recalculated_share_capital numeric(14,2);
+  recalculated_last_deposit date;
 begin
   if tg_op = 'DELETE' then
     target_member_id := old.member_id;
@@ -346,18 +348,17 @@ begin
     return case when tg_op = 'DELETE' then old else new end;
   end if;
 
+  select
+    coalesce(sum(coalesce(t.amount, 0)), 0),
+    max(t.transaction_date)
+  into recalculated_share_capital, recalculated_last_deposit
+  from public.share_capital_transactions t
+  where t.member_id = target_member_id;
+
   update public.members m
   set
-    share_capital = coalesce((
-      select sum(coalesce(t.amount, 0))
-      from public.share_capital_transactions t
-      where t.member_id = target_member_id
-    ), 0),
-    last_share_capital_deposit_date = coalesce((
-      select max(t.transaction_date)
-      from public.share_capital_transactions t
-      where t.member_id = target_member_id
-    ), m.last_share_capital_deposit_date),
+    share_capital = coalesce(recalculated_share_capital, 0),
+    last_share_capital_deposit_date = coalesce(recalculated_last_deposit, m.last_share_capital_deposit_date),
     updated_at = now()
   where m.id = target_member_id;
 
