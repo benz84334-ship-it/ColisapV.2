@@ -89,11 +89,12 @@ export default function Reports() {
         { key: 'beneficiary', label: 'Beneficiary', render: (row) => row.beneficiary || 'Not provided' },
         { key: 'remarks', label: 'Remarks', render: (row) => row.remarks || 'Not provided' },
       ]
-    : filters.type === 'Contribution Report'
+    : filters.type === 'Subsequent Process'
       ? [
         { key: 'reference', label: 'CIFK Number' },
         { key: 'member', label: 'Member Name' },
         { key: 'amount', label: 'Amount', render: (row) => formatCurrency(row.amount), sortKey: (row) => Number(row.amount) },
+        { key: 'time', label: 'Time', render: (row) => row.time || 'Not provided' },
         { key: 'date', label: 'Contribution Date', render: (row) => formatDate(row.date) },
         { key: 'branch', label: 'Branch', render: (row) => row.branch || 'Not provided' },
         { key: 'status', label: 'Status', render: (row) => row.status || 'Active' },
@@ -169,8 +170,8 @@ export default function Reports() {
             ? 'This report is based on member burial assistance applications, with CIFK number, dates, claim status, beneficiary, amount, and remarks.'
           : filters.type === 'All Member Register'
               ? 'This report is based on all member register records, membership date, branch, and premium.'
-          : filters.type === 'Contribution Report'
-                ? 'This report is based on contribution records, showing member name, CIFK number, contribution amount, and contribution date.'
+          : filters.type === 'Subsequent Process'
+                ? 'This report is based on contribution records, showing member name, CIFK number, contribution amount, time, and contribution date.'
               : 'This report is based on monthly register member records, membership date, branch, and premium.'}
         </p>
       </div>
@@ -180,7 +181,7 @@ export default function Reports() {
         {filters.type === 'Availment Report' ? (
           <StatCard accent="green" icon={FiDownload} title="Report Total" value={formatCurrency(totalAmount)} />
         ) : null}
-        {filters.type === 'Contribution Report' ? (
+        {filters.type === 'Subsequent Process' ? (
           <StatCard accent="green" icon={FiDownload} title="Contribution Total" value={formatCurrency(totalAmount)} />
         ) : null}
         <StatCard accent="teal" icon={FiFileText} title="Saved Reports" value={scopedData.reports.length} />
@@ -204,7 +205,7 @@ export default function Reports() {
             </BarChart>
           </ResponsiveContainer>
         </ChartCard>
-      ) : filters.type === 'Contribution Report' ? (
+      ) : filters.type === 'Subsequent Process' ? (
         <ChartCard subtitle="Contribution amount represented in current report rows" title={`${generated?.title || filters.type + ' Report'} Chart`}>
           <ResponsiveContainer height="100%" width="100%">
             <BarChart data={reportChart}>

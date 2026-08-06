@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { FiSearch } from 'react-icons/fi';
 import Button from '../../components/ui/Button.jsx';
 import FormField from '../../components/forms/FormField.jsx';
@@ -7,6 +7,16 @@ import PageHeader from '../../components/ui/PageHeader.jsx';
 import { useData } from '../../context/DataContext.jsx';
 import { useToast } from '../../context/ToastContext.jsx';
 import { formatCurrency, formatDate, todayIso } from '../../utils/formatters.js';
+
+function getPhilippineTime() {
+  return new Intl.DateTimeFormat('en-PH', {
+    timeZone: 'Asia/Manila',
+    hour: 'numeric',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: true,
+  }).format(new Date());
+}
 
 function nextContributionId(transactions = []) {
   const max = transactions.reduce((highest, transaction) => {
@@ -27,6 +37,7 @@ export default function Contributions() {
   const [saving, setSaving] = useState(false);
   const [memberSearchOpen, setMemberSearchOpen] = useState(false);
   const [memberSearch, setMemberSearch] = useState('');
+  const [philippineTime, setPhilippineTime] = useState('');
 
   const members = Array.isArray(data.members) ? data.members : [];
 
@@ -43,6 +54,16 @@ export default function Contributions() {
       return haystack.includes(query);
     }).slice(0, 50);
   }, [memberSearch, members]);
+
+  useEffect(() => {
+    const updateTime = () => {
+      setPhilippineTime(getPhilippineTime());
+    };
+
+    updateTime();
+    const timer = window.setInterval(updateTime, 1000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   const handleSaveContribution = async (event) => {
     event.preventDefault();
@@ -66,6 +87,9 @@ export default function Contributions() {
         contributionDate: contributionDate || todayIso(),
         recordedBy: recordedBy || 'Staff',
         transactionType: 'Deposit',
+        metadata: {
+          contributionTime: philippineTime || getPhilippineTime(),
+        },
       }, recordedBy || 'Staff');
 
       if (!nextContribution) {
@@ -90,8 +114,8 @@ export default function Contributions() {
         title="Contributions"
       />
       <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-950">
-        <form className="grid gap-4 lg:grid-cols-4 lg:items-end" autoComplete="off" onSubmit={handleSaveContribution}>
-          <div className="space-y-1 lg:col-span-2">
+        <form className="grid gap-4 lg:grid-cols-[minmax(0,1.7fr)_minmax(0,1.05fr)_minmax(0,0.95fr)_minmax(0,1fr)] lg:items-end" autoComplete="off" onSubmit={handleSaveContribution}>
+          <div className="space-y-1">
             <span className="block text-sm font-semibold text-slate-700 dark:text-slate-200">Member</span>
             <div className="relative">
               <button
@@ -132,6 +156,12 @@ export default function Contributions() {
             onChange={(event) => setContributionDate(event.target.value)}
           />
 
+          <div className="hidden lg:flex lg:h-full lg:items-end lg:justify-center lg:pb-1">
+            <span className="rounded-full border border-teal-200 bg-teal-50 px-4 py-2 text-sm font-bold uppercase tracking-[0.14em] text-teal-800 shadow-sm dark:border-teal-500/20 dark:bg-teal-500/10 dark:text-teal-100">
+              {philippineTime || 'Loading...'}
+            </span>
+          </div>
+
           <FormField
             label="Recorded By"
             autoComplete="off"
@@ -161,9 +191,9 @@ export default function Contributions() {
             </p>
           </div>
           <div className="rounded-2xl bg-slate-50 p-4 dark:bg-slate-900/70">
-            <p className="text-xs uppercase tracking-wider text-slate-400">Last Contribution Date</p>
+            <p className="text-xs uppercase tracking-wider text-slate-400">Last Contribution</p>
             <p className="mt-1 font-semibold text-slate-950 dark:text-white">
-              {selectedMember?.lastShareCapitalDepositDate ? formatDate(selectedMember.lastShareCapitalDepositDate) : 'None yet'}
+              {selectedMember?.lastShareCapitalDepositDate ? `${formatDate(selectedMember.lastShareCapitalDepositDate)} · ${selectedMember.lastContributionTime || 'No time recorded'}` : 'None yet'}
             </p>
           </div>
         </div>

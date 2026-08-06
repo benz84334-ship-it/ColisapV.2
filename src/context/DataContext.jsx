@@ -777,6 +777,7 @@ export function DataProvider({ children }) {
 
       const contributionDate = contribution.transactionDate || contribution.contributionDate || todayIso();
       const recordedBy = contribution.recordedBy || contribution.encodedBy || user || 'Staff';
+      const contributionTime = contribution.contributionTime || contribution.metadata?.contributionTime || '';
       const currentShareCapital = Number(member.shareCapital || 0);
       const nextShareCapital = currentShareCapital + amount;
       const transactionId = contribution.id || nextId('CON', database.shareCapitalTransactions || []);
@@ -794,6 +795,10 @@ export function DataProvider({ children }) {
         referenceNumber: contribution.referenceNumber || transactionId,
         encodedBy: recordedBy,
         remarks: contribution.remarks || '',
+        metadata: {
+          ...(contribution.metadata || {}),
+          contributionTime,
+        },
         createdAt: new Date().toISOString(),
       };
 
@@ -806,6 +811,7 @@ export function DataProvider({ children }) {
             lastContributionId: transactionId,
             lastContributionAmount: amount,
             lastContributionRecordedBy: recordedBy,
+            lastContributionTime: contributionTime,
           }
         : item,
       );
