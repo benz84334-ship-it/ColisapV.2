@@ -6,9 +6,9 @@ import { useData } from '../../context/DataContext.jsx';
 import { useToast } from '../../context/ToastContext.jsx';
 import { formatCurrency, formatDate, todayIso } from '../../utils/formatters.js';
 
-function nextContributionId(members = []) {
-  const max = members.reduce((highest, member) => {
-    const value = Number(String(member.id || '').match(/(\d+)$/)?.[1]);
+function nextContributionId(transactions = []) {
+  const max = transactions.reduce((highest, transaction) => {
+    const value = Number(String(transaction.id || '').match(/(\d+)$/)?.[1]);
     return Number.isNaN(value) ? highest : Math.max(highest, value);
   }, 0);
   return `CON-${String(max + 1).padStart(5, '0')}`;
@@ -47,7 +47,7 @@ export default function Contributions() {
     setSaving(true);
     try {
       const nextContribution = await createContribution?.({
-        id: nextContributionId(members),
+        id: nextContributionId(data.shareCapitalTransactions || []),
         memberId: selectedMember.id,
         amount: contributionAmount,
         contributionDate: contributionDate || todayIso(),

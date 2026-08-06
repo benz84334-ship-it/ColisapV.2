@@ -813,8 +813,10 @@ export function DataProvider({ children }) {
       updateKey('shareCapitalTransactions', nextTransactions);
       updateKey('members', nextMembers);
 
-      await saveSupabaseKey('shareCapitalTransactions', nextTransactions);
-      await saveSupabaseKey('members', [nextMembers.find((item) => item.id === member.id)]); 
+      await saveSupabaseKey('shareCapitalTransactions', nextContribution);
+      await saveSupabaseKey('members', [nextMembers.find((item) => item.id === member.id)]).catch((memberSaveError) => {
+        console.error(memberSaveError);
+      });
 
       addActivity(
         'Recorded Contribution',
