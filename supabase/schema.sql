@@ -834,6 +834,15 @@ create policy "public insert requests" on public.requests for insert to authenti
 create policy "public update requests" on public.requests for update to authenticated, anon using (true) with check (true);
 create policy "public delete requests" on public.requests for delete to authenticated, anon using (true);
 
+drop policy if exists "public read members" on public.members;
+drop policy if exists "public insert members" on public.members;
+drop policy if exists "public update members" on public.members;
+drop policy if exists "public delete members" on public.members;
+create policy "public read members" on public.members for select to authenticated, anon using (true);
+create policy "public insert members" on public.members for insert to authenticated, anon with check (true);
+create policy "public update members" on public.members for update to authenticated, anon using (true) with check (true);
+create policy "public delete members" on public.members for delete to authenticated, anon using (true);
+
 drop policy if exists "public read share capital transactions" on public.share_capital_transactions;
 drop policy if exists "public insert share capital transactions" on public.share_capital_transactions;
 drop policy if exists "public update share capital transactions" on public.share_capital_transactions;

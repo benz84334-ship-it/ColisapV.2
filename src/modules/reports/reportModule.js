@@ -1,7 +1,7 @@
 import { addDays, todayIso } from '../../utils/formatters.js';
 
-const reportTypes = ['Monthly Register Member', 'All Member Register', 'Availment Report'];
-const supportedReportTypes = ['Monthly Register Member', 'All Member Register', 'Availment Report'];
+const reportTypes = ['Monthly Register Member', 'All Member Register', 'Contribution Report', 'Availment Report'];
+const supportedReportTypes = ['Monthly Register Member', 'All Member Register', 'Contribution Report', 'Availment Report'];
 const calendarMonths = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 export { reportTypes, supportedReportTypes, calendarMonths };
@@ -91,6 +91,36 @@ export function buildReportRows(type, data, range) {
         status: member.status,
         remarks: '',
       }))
+      .sort((a, b) => new Date(b.date) - new Date(a.date));
+  }
+
+  if (type === 'Contribution Report') {
+    return (data.shareCapitalTransactions || [])
+      .map((item) => {
+        const matchedMember = (data.members || []).find((member) =>
+          String(member.id || '').trim() === String(item.memberId || '').trim()
+          || String(member.memberId || '').trim() === String(item.memberId || '').trim()
+          || String(member.cifNumber || '').trim() === String(item.referenceNumber || '').trim()
+          || (item.memberName && String(member.fullName || '').trim() === String(item.memberName || '').trim()),
+        );
+
+        return {
+          id: item.id,
+          memberId: matchedMember?.cifNumber || matchedMember?.memberId || item.memberId || '',
+          category: 'Contribution',
+          reference: matchedMember?.memberId || matchedMember?.cifNumber || item.referenceNumber || item.id,
+          member: matchedMember?.fullName || item.memberName || '',
+          branch: matchedMember?.branch || '',
+          date: item.transactionDate || item.createdAt,
+          type: item.transactionType || 'Deposit',
+          address: matchedMember?.address || '',
+          barangay: matchedMember?.barangay || '',
+          contact: matchedMember?.contactNumber || '',
+          amount: Number(item.amount || 0),
+          status: 'Recorded',
+          remarks: item.remarks || item.encodedBy || '',
+        };
+      })
       .sort((a, b) => new Date(b.date) - new Date(a.date));
   }
 
