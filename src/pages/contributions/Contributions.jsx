@@ -46,7 +46,7 @@ export default function Contributions() {
 
     setSaving(true);
     try {
-      const nextContribution = createContribution?.({
+      const nextContribution = await createContribution?.({
         id: nextContributionId(members),
         memberId: selectedMember.id,
         amount: contributionAmount,

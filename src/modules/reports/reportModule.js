@@ -104,22 +104,22 @@ export function buildReportRows(type, data, range) {
         );
 
         return {
-        id: item.id,
-        memberId: item.memberId,
-        category: 'Contribution',
-        reference: item.referenceNumber || item.id,
-        member: matchedMember?.fullName || item.memberName || '',
-        branch: matchedMember?.branch || '',
-        date: item.transactionDate || item.createdAt,
-        type: item.transactionType || 'Deposit',
-        address: matchedMember?.address || '',
-        barangay: matchedMember?.barangay || '',
-        contact: matchedMember?.contactNumber || '',
-        amount: Number(item.amount || 0),
-        status: 'Completed',
-        remarks: [item.encodedBy ? `Recorded by ${item.encodedBy}` : '', item.remarks || ''].filter(Boolean).join(' | '),
+          id: item.id,
+          memberId: item.memberId,
+          category: 'Contribution',
+          reference: item.referenceNumber || item.id,
+          member: matchedMember?.fullName || item.memberName || '',
+          branch: matchedMember?.branch || '',
+          date: item.transactionDate || item.createdAt,
+          type: item.transactionType || 'Deposit',
+          address: matchedMember?.address || '',
+          barangay: matchedMember?.barangay || '',
+          contact: matchedMember?.contactNumber || '',
+          amount: Number(item.amount || 0),
+          status: 'Completed',
+          remarks: [item.encodedBy ? `Recorded by ${item.encodedBy}` : '', item.remarks || ''].filter(Boolean).join(' | '),
         };
-      }))
+      })
       .sort((a, b) => new Date(b.date) - new Date(a.date));
   }
 
@@ -148,24 +148,24 @@ export function buildReportRows(type, data, range) {
         );
         const status = isApproved ? 'Approved' : (statusFromFields || 'Pending');
         return {
-        id: item.id,
-        memberId: resolvedCifNumber,
-        category: 'Availment',
-        reference: resolvedCifNumber,
-        member: resolvedMemberName,
-        date: item.availmentDate || item.createdAt,
-        type: item.availmentType || 'Burial Assistance',
-        dateApproved: item.dateApproved || '',
-        address: item.claimantAddress || '',
-        barangay: '',
-        contact: item.contactNumber || '',
-        amount: resolveAvailmentAmountValue(item),
-        amountLabel: resolveAvailmentAmountLabel(item),
-        availmentCategory: item.availmentType || item.benefitCategory || item.deceasedBenefitCategory || 'Burial Assistance',
-        status,
-        claimStatus: status,
-        beneficiary: item.claimantName || '',
-        remarks: [item.approvedBy, item.verifiedBy, item.remarks].filter(Boolean).join(' | '),
+          id: item.id,
+          memberId: resolvedCifNumber,
+          category: 'Availment',
+          reference: resolvedCifNumber,
+          member: resolvedMemberName,
+          date: item.availmentDate || item.createdAt,
+          type: item.availmentType || 'Burial Assistance',
+          dateApproved: item.dateApproved || '',
+          address: item.claimantAddress || '',
+          barangay: '',
+          contact: item.contactNumber || '',
+          amount: resolveAvailmentAmountValue(item),
+          amountLabel: resolveAvailmentAmountLabel(item),
+          availmentCategory: item.availmentType || item.benefitCategory || item.deceasedBenefitCategory || 'Burial Assistance',
+          status,
+          claimStatus: status,
+          beneficiary: item.claimantName || '',
+          remarks: [item.approvedBy, item.verifiedBy, item.remarks].filter(Boolean).join(' | '),
         };
       })
       .sort((a, b) => new Date(b.date) - new Date(a.date));

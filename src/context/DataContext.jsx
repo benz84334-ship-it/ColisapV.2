@@ -768,7 +768,7 @@ export function DataProvider({ children }) {
   );
 
   const createContribution = useCallback(
-    (contribution, user) => {
+    async (contribution, user) => {
       const member = database.members.find((item) => item.id === contribution.memberId || item.memberId === contribution.memberId);
       if (!member) return null;
 
@@ -797,20 +797,27 @@ export function DataProvider({ children }) {
         createdAt: new Date().toISOString(),
       };
 
-      updateKey('shareCapitalTransactions', (items = []) => [nextContribution, ...items]);
-      updateKey('members', (members = []) =>
-        members.map((item) => item.id === member.id
-          ? {
-              ...item,
-              shareCapital: nextShareCapital,
-              lastShareCapitalDepositDate: contributionDate,
-              lastContributionId: transactionId,
-              lastContributionAmount: amount,
-              lastContributionRecordedBy: recordedBy,
-            }
-          : item,
-        ),
+      const nextTransactions = [nextContribution, ...(database.shareCapitalTransactions || [])];
+      const nextMembers = (database.members || []).map((item) => item.id === member.id
+        ? {
+            ...item,
+            shareCapital: nextShareCapital,
+            lastShareCapitalDepositDate: contributionDate,
+            lastContributionId: transactionId,
+            lastContributionAmount: amount,
+            lastContributionRecordedBy: recordedBy,
+          }
+        : item,
       );
+
+      setDatabase((current) => ({
+        ...current,
+        shareCapitalTransactions: nextTransactions,
+        members: nextMembers,
+      }));
+
+      await saveSupabaseKey('shareCapitalTransactions', nextTransactions);
+      await saveSupabaseKey('members', nextMembers);
 
       addActivity(
         'Recorded Contribution',
@@ -820,7 +827,7 @@ export function DataProvider({ children }) {
 
       return nextContribution;
     },
-    [addActivity, database.members, database.shareCapitalTransactions, updateKey],
+    [addActivity, database.members, database.shareCapitalTransactions, setDatabase],
   );
 
   const deleteMember = useCallback(
