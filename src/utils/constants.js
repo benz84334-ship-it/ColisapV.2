@@ -67,6 +67,7 @@ export const NAV_ITEMS = [
   { label: 'Dashboard', path: '/dashboard', roles: WORKSPACE_ROLES },
   { label: 'Members', path: '/members', roles: WORKSPACE_ROLES },
   { label: 'Claimant Application', path: '/claimant-application', roles: [ROLES.STAFF] },
+  { label: 'Contributions', path: '/contributions', roles: [ROLES.STAFF] },
   { label: 'Request Approval', path: '/request-approval', roles: [ROLES.ADMIN, ROLES.MANAGER] },
   { label: 'Reports', path: '/reports', roles: WORKSPACE_ROLES },
   { label: 'Settings', path: '/settings', roles: [ROLES.ADMIN] },
