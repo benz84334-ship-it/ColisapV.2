@@ -3,10 +3,11 @@ import { ANTIQUE_BARANGAYS } from './antiqueBarangays.js';
 export const ROLES = {
   ADMIN: 'Admin',
   MANAGER: 'Manager',
+  STAFF: 'Staff',
 };
 
-export const WORKSPACE_ROLES = [ROLES.ADMIN, ROLES.MANAGER];
-export const USER_ROLE_OPTIONS = [ROLES.ADMIN, ROLES.MANAGER];
+export const WORKSPACE_ROLES = [ROLES.ADMIN, ROLES.MANAGER, ROLES.STAFF];
+export const USER_ROLE_OPTIONS = [ROLES.ADMIN, ROLES.MANAGER, ROLES.STAFF];
 
 export const BRANCH_OPTIONS = [
   'Main Office',
@@ -40,6 +41,7 @@ export const BARANGAYS = ANTIQUE_BARANGAYS;
 
 export const GENDERS = ['Female', 'Male'];
 export const MEMBER_STATUSES = ['Active', 'Inactive', 'Dormant'];
+export const MEMBER_BENEFIT_CATEGORIES = ['40K (PHP 40,000.00)', '60K (PHP 60,000.00)'];
 export const LOAN_STATUSES = ['Pending', 'Active', 'Completed', 'Overdue'];
 export const COLLECTION_STATUSES = ['Paid', 'Partial', 'Pending', 'Overdue'];
 export const PAYMENT_STATUSES = ['Completed', 'Pending', 'Reversed'];
@@ -64,6 +66,8 @@ export const DEFAULT_LOAN_TYPES = [
 export const NAV_ITEMS = [
   { label: 'Dashboard', path: '/dashboard', roles: WORKSPACE_ROLES },
   { label: 'Members', path: '/members', roles: WORKSPACE_ROLES },
+  { label: 'Claimant Application', path: '/claimant-application', roles: [ROLES.STAFF] },
+  { label: 'Request Approval', path: '/request-approval', roles: [ROLES.ADMIN, ROLES.MANAGER] },
   { label: 'Reports', path: '/reports', roles: WORKSPACE_ROLES },
   { label: 'Settings', path: '/settings', roles: [ROLES.ADMIN] },
 ];
@@ -83,5 +87,16 @@ export const STATUS_STYLES = {
   Partial: 'bg-orange-100 text-orange-700 dark:bg-orange-500/15 dark:text-orange-200',
   Reversed: 'bg-rose-100 text-rose-700 dark:bg-rose-500/15 dark:text-rose-200',
 };
+
+export function normalizeBenefitCategory(value = '') {
+  const text = String(value || '').trim();
+  if (!text) return '';
+
+  if (/basic life savings|40k/i.test(text)) return MEMBER_BENEFIT_CATEGORIES[0];
+  if (/premium life savings|60k/i.test(text)) return MEMBER_BENEFIT_CATEGORIES[1];
+
+  const matched = MEMBER_BENEFIT_CATEGORIES.find((option) => option.toLowerCase() === text.toLowerCase());
+  return matched || text;
+}
 
 export const CHART_COLORS = ['#0f766e', '#2563eb', '#f59e0b', '#dc2626', '#7c3aed', '#0891b2'];

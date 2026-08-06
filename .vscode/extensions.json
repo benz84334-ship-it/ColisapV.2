@@ -1,6 +1,7 @@
 {
     "recommendations": [
         "meteorstudio.cursorcode",
-        "ritwickdey.liveserver"
+        "ritwickdey.liveserver",
+        "codeium.codeium"
     ]
 }

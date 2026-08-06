@@ -2,6 +2,7 @@ import { todayIso } from './formatters.js';
 
 const LOW_SHARE_CAPITAL_LIMIT = 2000;
 const DORMANT_MONTHS_WITHOUT_DEPOSIT = 3;
+const DORMANT_REMINDER_DAYS = Array.from({ length: 30 }, (_, index) => 30 - index);
 
 export function getLastShareCapitalDepositDate(member = {}) {
   return member.lastShareCapitalDepositDate || member.lastCapitalDepositDate || member.membershipDate || member.createdAt || todayIso();
@@ -65,9 +66,6 @@ export function applyComputedMemberStatuses(members = [], loans = [], today = to
 }
 
 export function getMembersApproachingStatusChange(members = [], loans = [], today = todayIso()) {
-  const oneWeek = 7;
-  const oneMonth = 30;
-
   return members
     .map((member) => {
       const lastDeposit = new Date(getLastShareCapitalDepositDate(member));
@@ -75,31 +73,29 @@ export function getMembersApproachingStatusChange(members = [], loans = [], toda
 
       const shareCapital = Number(member.shareCapital || 0);
       const requiredShareCapital = getRequiredShareCapitalForMember(member, loans);
-      const currentStatus = getComputedMemberStatus(member, loans, today);
-
-      // Only warn currently active members
-      if (currentStatus !== 'Active') return null;
 
       // Calculate when they would become inactive/dormant
       const dormantThreshold = new Date(lastDeposit);
       dormantThreshold.setMonth(dormantThreshold.getMonth() + DORMANT_MONTHS_WITHOUT_DEPOSIT);
 
       const daysUntilDormant = Math.ceil((dormantThreshold - new Date(today)) / (1000 * 60 * 60 * 24));
-      
-      // Check if they're within warning period
-      if (daysUntilDormant > 0 && daysUntilDormant <= oneMonth) {
+
+      if (daysUntilDormant > 0 && DORMANT_REMINDER_DAYS.includes(daysUntilDormant)) {
         const projectedStatus = requiredShareCapital > 0 && shareCapital < requiredShareCapital ? 'Inactive' : 'Dormant';
-        const timeframe = daysUntilDormant <= oneWeek ? '1 week' : '1 month';
         return {
           member,
           daysUntilStatusChange: daysUntilDormant,
           projectedStatus,
           statusChangeDate: dormantThreshold.toISOString().split('T')[0],
-          timeframe,
+          reminderDay: daysUntilDormant,
         };
       }
 
       return null;
     })
     .filter(Boolean);
+}
+
+export function getDormantReminderDays() {
+  return [...DORMANT_REMINDER_DAYS];
 }

@@ -78,9 +78,9 @@ export default function DataTable({
   };
 
   return (
-    <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-950">
+    <section className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-950">
       {!hideHeader ? (
-        <div className="flex flex-col gap-4 border-b border-slate-200 p-5 dark:border-slate-800 xl:flex-row xl:items-center xl:justify-between">
+        <div className="flex flex-col gap-4 border-b border-slate-200 bg-slate-50/70 p-5 dark:border-slate-800 dark:bg-slate-900/40 xl:flex-row xl:items-center xl:justify-between">
           {!hideHeaderText ? (
             <div>
               {title ? <h2 className="text-lg font-bold text-slate-950 dark:text-white">{title}</h2> : null}
@@ -89,15 +89,15 @@ export default function DataTable({
           ) : <div />}
           <div className="flex flex-wrap items-center gap-2 no-print">
             {addAction}
-            <button type="button" className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:hover:bg-slate-800" onClick={() => exportToCSV(sorted, columns, `${title || 'export'}.csv`)}>
+            <button type="button" className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:hover:border-slate-600 dark:hover:bg-slate-800" onClick={() => exportToCSV(sorted, columns, `${title || 'export'}.csv`)}>
               <FiDownload />
               CSV
             </button>
-            <button type="button" className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:hover:bg-slate-800" onClick={() => exportToExcel(sorted, columns, `${title || 'export'}.xls`)}>
+            <button type="button" className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:hover:border-slate-600 dark:hover:bg-slate-800" onClick={() => exportToExcel(sorted, columns, `${title || 'export'}.xls`)}>
               <FiFile />
               Excel
             </button>
-            <button type="button" className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:hover:bg-slate-800" onClick={() => printCurrentView()}>
+            <button type="button" className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:hover:border-slate-600 dark:hover:bg-slate-800" onClick={() => printCurrentView()}>
               <FiPrinter />
               Print
             </button>
@@ -105,22 +105,22 @@ export default function DataTable({
         </div>
       ) : null}
 
-      <div className="grid gap-3 p-5 no-print lg:grid-cols-[minmax(18rem,1fr)_auto]">
+      <div className="grid gap-4 border-b border-slate-200 bg-white p-5 no-print dark:border-slate-800 dark:bg-slate-950 lg:grid-cols-[minmax(0,1.7fr)_minmax(22rem,1fr)]">
         <label className="relative block">
           <FiSearch className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
           <input
-            className="h-11 w-full rounded-lg border border-slate-200 bg-white pl-10 pr-3 text-sm outline-none transition focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
+            className="h-11 w-full rounded-2xl border border-slate-200 bg-slate-50 pl-10 pr-3 text-sm outline-none transition placeholder:text-slate-400 focus:border-teal-500 focus:bg-white focus:ring-2 focus:ring-teal-500/20 dark:border-slate-700 dark:bg-slate-900 dark:text-white dark:focus:bg-slate-950"
             placeholder={searchPlaceholder}
             value={query}
             onChange={(event) => setQuery(event.target.value)}
           />
         </label>
-        <div className="flex flex-wrap gap-2">
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-[repeat(auto-fit,minmax(12rem,1fr))]">
           {filters.map((filter) => (
             <select
               key={filter.key}
               aria-label={filter.label}
-              className="h-11 rounded-lg border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 outline-none transition focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+              className="h-11 w-full min-w-0 rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm font-medium text-slate-700 outline-none transition focus:border-teal-500 focus:bg-white focus:ring-2 focus:ring-teal-500/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:focus:bg-slate-950"
               value={filterValues[filter.key] || 'All'}
               onChange={(event) => setFilterValues((current) => ({ ...current, [filter.key]: event.target.value }))}
             >
@@ -140,19 +140,19 @@ export default function DataTable({
           <thead className="bg-slate-50/80 text-xs uppercase tracking-wider text-slate-500 dark:bg-slate-900 dark:text-slate-400">
             <tr>
               {columns.map((column) => (
-                <th key={column.key} className={`whitespace-nowrap px-5 py-3 font-bold ${column.className || ''}`}>
+                <th key={column.key} className={`whitespace-nowrap px-5 py-4 font-bold ${column.className || ''}`}>
                   <button
-                    className="inline-flex items-center gap-1 rounded text-left hover:text-slate-900 disabled:cursor-default disabled:hover:text-inherit dark:hover:text-white"
+                    className="inline-flex items-center gap-1 rounded-lg text-left hover:text-slate-900 disabled:cursor-default disabled:hover:text-inherit dark:hover:text-white"
                     disabled={column.sortable === false}
                     type="button"
                     onClick={() => handleSort(column)}
                   >
                     {column.label}
-                    {sort.key === column.key ? sort.direction === 'asc' ? <FiChevronUp /> : <FiChevronDown /> : null}
+                    {column.sortable === false ? null : sort.key === column.key ? sort.direction === 'asc' ? <FiChevronUp /> : <FiChevronDown /> : null}
                   </button>
                 </th>
               ))}
-              {actions ? <th className="whitespace-nowrap px-5 py-3 text-right font-bold">Actions</th> : null}
+              {actions ? <th className="whitespace-nowrap px-5 py-3 text-center font-bold">Actions</th> : null}
             </tr>
           </thead>
           <tbody className="screen-table-body divide-y divide-slate-100 dark:divide-slate-800">
@@ -163,7 +163,7 @@ export default function DataTable({
                     {column.render ? column.render(row) : valueFor(row, column.key)}
                   </td>
                 ))}
-                {actions ? <td className="px-5 py-4 text-right">{actions(row)}</td> : null}
+                {actions ? <td className="px-5 py-4 text-center">{actions(row)}</td> : null}
               </tr>
             ))}
           </tbody>
@@ -175,7 +175,7 @@ export default function DataTable({
                     {column.render ? column.render(row) : valueFor(row, column.key)}
                   </td>
                 ))}
-                {actions ? <td className="px-5 py-3 text-right">{actions(row)}</td> : null}
+                {actions ? <td className="px-5 py-3 text-center">{actions(row)}</td> : null}
               </tr>
             ))}
           </tbody>
@@ -188,7 +188,7 @@ export default function DataTable({
         </div>
       ) : null}
 
-      <div className="table-pagination flex flex-col gap-3 border-t border-slate-200 p-5 text-sm text-slate-500 dark:border-slate-800 dark:text-slate-400 sm:flex-row sm:items-center sm:justify-between">
+      <div className="table-pagination flex flex-col gap-3 border-t border-slate-200 bg-slate-50/60 p-5 text-sm text-slate-500 dark:border-slate-800 dark:bg-slate-900/40 dark:text-slate-400 sm:flex-row sm:items-center sm:justify-between">
         <span>
           Showing {paginated.length ? (currentPage - 1) * pageSize + 1 : 0}-{Math.min(currentPage * pageSize, sorted.length)} of {sorted.length}
         </span>
@@ -196,7 +196,7 @@ export default function DataTable({
           <Button icon={FiChevronLeft} variant="secondary" disabled={currentPage === 1} onClick={() => setPage((value) => Math.max(1, value - 1))}>
             Prev
           </Button>
-          <span className="rounded-lg bg-slate-100 px-3 py-2 font-bold text-slate-700 dark:bg-slate-800 dark:text-slate-200">
+          <span className="rounded-xl border border-slate-200 bg-white px-3 py-2 font-bold text-slate-700 shadow-sm dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200">
             {currentPage} / {pages}
           </span>
           <Button

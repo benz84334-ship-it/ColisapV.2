@@ -1,3 +1,5 @@
+import { normalizeContactNumber } from './formatters.js';
+
 export function required(value) {
   return value !== undefined && value !== null && String(value).trim() !== '';
 }
@@ -7,7 +9,7 @@ export function isPositiveAmount(value) {
 }
 
 export function isPhone(value) {
-  return /^(\+?63|0)?9\d{9}$/.test(String(value).replace(/\s|-/g, ''));
+  return /^09\d{9}$/.test(normalizeContactNumber(value));
 }
 
 export function dateIsAfter(start, end) {

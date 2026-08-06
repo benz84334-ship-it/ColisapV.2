@@ -73,21 +73,63 @@ export function normalizeText(value) {
   return String(value ?? '').toLowerCase().trim();
 }
 
+export function normalizeContactNumber(value = '') {
+  const digits = String(value ?? '').replace(/\D/g, '');
+  if (!digits) return '';
+  if (digits.startsWith('09')) return digits.slice(0, 11);
+  if (digits.startsWith('639')) return `09${digits.slice(3, 11)}`.slice(0, 11);
+  if (digits.startsWith('63')) return `09${digits.slice(2, 10)}`.slice(0, 11);
+  if (digits.startsWith('9')) return `0${digits.slice(0, 10)}`.slice(0, 11);
+  if (digits.startsWith('0')) return digits.slice(0, 11);
+  return `09${digits.slice(-9)}`.slice(0, 11);
+}
+
+export function formatContactNumber(value = '') {
+  const normalized = normalizeContactNumber(value);
+  return normalized || '';
+}
+
 function numericSuffix(value) {
   const match = String(value || '').match(/(\d+)$/);
   return match ? Number(match[1]) : 0;
 }
 
+function currentCifYear(date = new Date()) {
+  return new Date(date).getFullYear();
+}
+
+function randomFiveDigitNumber() {
+  return String(Math.floor(10000 + Math.random() * 90000));
+}
+
+function collectUsedCifSuffixes(members = []) {
+  return new Set(members.flatMap((member) => {
+    const suffixes = [];
+    const cifMatch = String(member.cifNumber || '').match(/^CIFK-\d{4}-(\d{5})$/i);
+    const memberMatch = String(member.memberId || '').match(/^CIFK-\d{4}-(\d{5})$/i);
+    if (cifMatch?.[1]) suffixes.push(cifMatch[1]);
+    if (memberMatch?.[1]) suffixes.push(memberMatch[1]);
+    return suffixes;
+  }));
+}
+
 export function formatCifNumber(member = {}) {
   const cifNumber = String(member.cifNumber || '').trim();
-  if (cifNumber) return cifNumber;
-
-  const memberId = String(member.memberId || '').trim();
-  const suffix = numericSuffix(memberId);
-  return suffix ? `CIF-${String(suffix).padStart(5, '0')}` : 'Not provided';
+  if (cifNumber) {
+    if (/^\d{5}$/.test(cifNumber)) {
+      return `CIFK-${currentCifYear()}-${cifNumber}`;
+    }
+    return cifNumber;
+  }
+  return 'Not provided';
 }
 
 export function nextCifNumber(members = []) {
-  const highest = members.reduce((max, member) => Math.max(max, numericSuffix(member.cifNumber) || numericSuffix(member.memberId)), 0);
-  return `CIF-${String(highest + 1).padStart(5, '0')}`;
+  const year = currentCifYear();
+  const used = collectUsedCifSuffixes(members);
+  let suffix = '';
+  do {
+    suffix = randomFiveDigitNumber();
+  } while (used.has(suffix));
+  return `CIFK-${year}-${suffix}`;
 }

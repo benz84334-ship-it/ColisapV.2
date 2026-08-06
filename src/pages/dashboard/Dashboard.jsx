@@ -8,20 +8,35 @@ import Badge from '../../components/ui/Badge.jsx';
 import Button from '../../components/ui/Button.jsx';
 import ExportActions from '../../components/ui/ExportActions.jsx';
 import Modal from '../../components/ui/Modal.jsx';
+import PageHeader from '../../components/ui/PageHeader.jsx';
 import { useAuth } from '../../context/AuthContext.jsx';
 import { useData } from '../../context/DataContext.jsx';
 import { buildDashboardData, getBranchScopedData } from '../../utils/analytics.js';
 import { formatCurrency, formatDate, formatDateTime, todayIso } from '../../utils/formatters.js';
 import { getMembersApproachingStatusChange } from '../../utils/memberStatus.js';
-import { ROLES } from '../../utils/constants.js';
+import { MEMBER_BENEFIT_CATEGORIES, ROLES, normalizeBenefitCategory } from '../../utils/constants.js';
+
+function isSameIsoDate(value, isoDate) {
+  if (!value || !isoDate) return false;
+  return String(value).slice(0, 10) === String(isoDate).slice(0, 10);
+}
+
+function getLatestSmsDebugEntry(entries = [], memberId) {
+  return entries
+    .filter((entry) => entry?.memberId === memberId)
+    .slice()
+    .sort((left, right) => new Date(right.createdAt || right.updatedAt || 0) - new Date(left.createdAt || left.updatedAt || 0))[0];
+}
 
 export default function Dashboard() {
   const data = useData();
   const { currentUser } = useAuth();
   const isAdmin = currentUser?.role === ROLES.ADMIN;
+  const isManager = currentUser?.role === ROLES.MANAGER;
   const scopedData = isAdmin ? data : getBranchScopedData(data, currentUser?.branch);
   const dashboard = buildDashboardData(scopedData, isAdmin ? undefined : currentUser?.branch);
   const activities = scopedData.activityLogs.slice(0, 6);
+  const smsDebugLogs = data.smsDebugLogs || [];
   const [accountListModal, setAccountListModal] = useState(null);
   const visibleWidgets = {
     stats: true,
@@ -31,12 +46,13 @@ export default function Dashboard() {
   const activeMembers = scopedData.members.filter((member) => member.status === 'Active').length;
   const inactiveMembers = scopedData.members.filter((member) => member.status === 'Inactive').length;
   const dormantMembers = scopedData.members.filter((member) => member.status === 'Dormant').length;
+  const fortyKMembers = scopedData.members.filter((member) => normalizeBenefitCategory(member.benefitCategory) === MEMBER_BENEFIT_CATEGORIES[0]);
+  const sixtyKMembers = scopedData.members.filter((member) => normalizeBenefitCategory(member.benefitCategory) === MEMBER_BENEFIT_CATEGORIES[1]);
   const dashboardExportColumns = [
     { key: 'memberId', label: 'CIFK Number' },
     { key: 'fullName', label: 'Member' },
     { key: 'barangay', label: 'Barangay / Municipality' },
     { key: 'membershipDate', label: 'Membership Date' },
-    { key: 'shareCapital', label: 'Share Capital' },
     { key: 'status', label: 'Status' },
   ];
   const memberStatusByMonth = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'].map((month) => ({
@@ -104,25 +120,25 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
-        <div>
-          <p className="text-sm font-bold text-teal-700 dark:text-teal-200">Barbaza Multi-Purpose Cooperative</p>
-          <h1 className="mt-2 text-3xl font-black tracking-tight text-slate-950 dark:text-white">Colisap Monitoring</h1>
-          <p className="mt-2 max-w-3xl text-sm text-slate-500 dark:text-slate-400">
-            Summary of membership status, released packages, collections, and accounts requiring attention.
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-2 no-print">
-          <ExportActions rows={scopedData.members} columns={dashboardExportColumns} filename={`dashboard-${todayIso()}`} />
-          <Link to="/reports">
-            <Button icon={FiFileText} variant="secondary">
-              Generate Report
-            </Button>
-          </Link>
-        </div>
-      </div>
+      <PageHeader
+        eyebrow="Barbaza Multi-Purpose Cooperative"
+        title="Colisap Monitoring"
+        description="Summary of membership status, released packages, collections, and accounts requiring attention."
+        actions={(
+          <>
+            <ExportActions rows={scopedData.members} columns={dashboardExportColumns} filename={`dashboard-${todayIso()}`} />
+            {isAdmin || isManager ? (
+              <Link to="/reports">
+                <Button icon={FiFileText} variant="secondary">
+                  Generate Report
+                </Button>
+              </Link>
+            ) : null}
+          </>
+        )}
+      />
 
-      <div className={`rounded-xl border px-5 py-4 ${isAdmin ? 'border-violet-200 bg-violet-50 dark:border-violet-900 dark:bg-violet-500/10' : 'border-blue-200 bg-blue-50 dark:border-blue-900 dark:bg-blue-500/10'}`}>
+      <div className={`rounded-3xl border px-5 py-4 shadow-sm ${isAdmin ? 'border-violet-200 bg-violet-50 dark:border-violet-900 dark:bg-violet-500/10' : 'border-blue-200 bg-blue-50 dark:border-blue-900 dark:bg-blue-500/10'}`}>
         <p className={`text-sm font-black ${isAdmin ? 'text-violet-800 dark:text-violet-200' : 'text-blue-800 dark:text-blue-200'}`}>
           {isAdmin ? 'Administrator workspace — all branches and full system control' : `Manager workspace — ${currentUser?.branch || 'assigned branch'} reporting and monitoring`}
         </p>
@@ -133,10 +149,12 @@ export default function Dashboard() {
 
       {visibleWidgets.stats ? (
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          <StatCard accent="teal" icon={FiUsers} title="Total Members" value={dashboard.stats.totalMembers} meta="Registered cooperative members" />
-          <StatCard accent="blue" icon={FiUserCheck} title="Active Members" value={activeMembers} meta="Members in good standing" />
-          <StatCard accent="green" icon={FiUserMinus} title="Inactive Members" value={inactiveMembers} meta="Members needing follow-up" />
-          <StatCard accent="red" icon={FiAlertTriangle} title="Dormant Members" value={dormantMembers} meta="Members with dormant status" />
+          <StatCard accent="teal" icon={FiUsers} title="Total Members" value={dashboard.stats.totalMembers} />
+          <StatCard accent="violet" icon={FiUsers} title="40K Availments" value={fortyKMembers.length} />
+          <StatCard accent="violet" icon={FiUsers} title="60K Availments" value={sixtyKMembers.length} />
+          <StatCard accent="blue" icon={FiUserCheck} title="Active Members" value={activeMembers} />
+          <StatCard accent="green" icon={FiUserMinus} title="Inactive Members" value={inactiveMembers} />
+          <StatCard accent="red" icon={FiAlertTriangle} title="Dormant Members" value={dormantMembers} />
         </div>
       ) : null}
 
@@ -158,44 +176,84 @@ export default function Dashboard() {
       <div className="grid gap-6 xl:grid-cols-3">
         {visibleWidgets.statusChange ? (
           <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-950 xl:col-span-2">
-          <h2 className="text-base font-bold text-slate-950 dark:text-white">Status Change Notifications</h2>
-          <div className="mt-4 divide-y divide-slate-100 dark:divide-slate-800">
-            {membersApproachingStatusChange.length > 0 ? (
-              membersApproachingStatusChange.slice(0, 6).map((alert) => (
-                <div key={alert.member.id} className="flex flex-wrap items-center justify-between gap-3 py-3">
-                  <div>
-                    <p className="font-bold text-slate-900 dark:text-white">{alert.member.fullName}</p>
-                    <p className="text-sm text-slate-500 dark:text-slate-400">{alert.member.memberId}</p>
-                  </div>
-                  <div className="text-right">
-                    <p className="font-black text-slate-950 dark:text-white">
-                      {alert.daysUntilStatusChange} day{alert.daysUntilStatusChange !== 1 ? 's' : ''} until {alert.projectedStatus}
-                    </p>
-                    <Badge tone={alert.projectedStatus === 'Dormant' ? 'Overdue' : 'Pending'}>{alert.projectedStatus}</Badge>
-                  </div>
+            <h2 className="text-base font-bold text-slate-950 dark:text-white">Status Change Notifications</h2>
+            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+              Showing {Math.min(6, membersApproachingStatusChange.length)} of {membersApproachingStatusChange.length} members in the warning window.
+            </p>
+            <div className="mt-4 divide-y divide-slate-100 dark:divide-slate-800">
+              {membersApproachingStatusChange.length > 0 ? (
+                membersApproachingStatusChange.slice(0, 6).map((alert) => {
+                  const debug = getLatestSmsDebugEntry(smsDebugLogs, alert.member.id);
+                  const sentToday = debug?.createdAt ? isSameIsoDate(debug.createdAt, todayIso()) : false;
+                  const hasHistory = Boolean(debug);
+                  const isLiveSuccess = debug?.status === 'success';
+                  const isLocalSave = debug?.status === 'saved_locally';
+                  const isFailed = debug?.status === 'failed';
+                  const isSkipped = debug?.status === 'skipped';
+                  const statusTone = isLiveSuccess ? 'success' : isFailed ? 'danger' : isSkipped ? 'warning' : 'info';
+                  const statusLabel = isLiveSuccess
+                    ? sentToday ? 'SMS Sent Today' : 'SMS Sent Before'
+                    : isLocalSave
+                      ? sentToday ? 'Locally Saved Today' : 'Locally Saved Before'
+                      : isFailed
+                        ? 'SMS Failed'
+                        : isSkipped
+                          ? 'SMS Skipped'
+                          : 'Pending';
+                  return (
+                    <div
+                      key={alert.member.id}
+                      className="grid gap-4 py-4 md:grid-cols-[minmax(0,1fr)_auto] md:items-center"
+                    >
+                      <div className="min-w-0">
+                        <p className="font-bold text-slate-900 dark:text-white">{alert.member.fullName}</p>
+                        <p className="text-sm text-slate-500 dark:text-slate-400">{alert.member.memberId}</p>
+                      </div>
+                      <div className="text-left md:text-right">
+                        <div className="flex flex-wrap items-center gap-2 md:justify-end">
+                          <p className="font-black text-slate-950 dark:text-white">
+                            {alert.daysUntilStatusChange} day{alert.daysUntilStatusChange !== 1 ? 's' : ''} until dormant
+                          </p>
+                          <Badge tone={alert.projectedStatus === 'Dormant' ? 'Overdue' : 'Pending'}>{alert.projectedStatus}</Badge>
+                        </div>
+                        {hasHistory ? (
+                          <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                            {isLiveSuccess
+                              ? `Sent ${debug.reminderDay} day reminder on ${formatDateTime(debug.createdAt)}`
+                              : isLocalSave
+                                ? `Saved locally on ${formatDateTime(debug.createdAt)}`
+                                : isFailed
+                                  ? debug.error
+                                  : isSkipped
+                                    ? debug.error
+                                    : 'SMS history available'}
+                          </p>
+                        ) : null}
+                      </div>
+                    </div>
+                  );
+                })
+              ) : (
+                <div className="py-8 text-center text-sm text-slate-500 dark:text-slate-400">
+                  No members approaching status change
                 </div>
-              ))
-            ) : (
-              <div className="py-8 text-center text-sm text-slate-500 dark:text-slate-400">
-                No members approaching status change
-              </div>
-            )}
-          </div>
+              )}
+            </div>
           </section>
         ) : null}
 
         {visibleWidgets.activities ? (
           <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-950">
-          <h2 className="text-base font-bold text-slate-950 dark:text-white">Recent Activities</h2>
-          <div className="mt-4 space-y-4">
-            {activities.map((activity) => (
-              <div key={activity.id} className="border-l-2 border-teal-500 pl-3">
-                <p className="text-sm font-bold text-slate-900 dark:text-white">{activity.action}</p>
-                <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{activity.detail}</p>
-                <p className="mt-1 text-xs text-slate-400">{formatDateTime(activity.createdAt)}</p>
-              </div>
-            ))}
-          </div>
+            <h2 className="text-base font-bold text-slate-950 dark:text-white">Recent Activities</h2>
+            <div className="mt-4 space-y-4">
+              {activities.map((activity) => (
+                <div key={activity.id} className="border-l-2 border-teal-500 pl-3">
+                  <p className="text-sm font-bold text-slate-900 dark:text-white">{activity.action}</p>
+                  <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{activity.detail}</p>
+                  <p className="mt-1 text-xs text-slate-400">{formatDateTime(activity.createdAt)}</p>
+                </div>
+              ))}
+            </div>
           </section>
         ) : null}
       </div>

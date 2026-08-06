@@ -137,9 +137,9 @@ export default function Payments() {
       </div>
 
       <div className="grid gap-4 md:grid-cols-3">
-        <StatCard accent="green" icon={FiDollarSign} title="Total Payments" value={formatCurrency(getCollectionTotal(data.payments))} meta="All posted payments plus penalties" />
-        <StatCard accent="blue" icon={FiCreditCard} title="Payment Count" value={data.payments.length} meta="Completed receipt records" />
-        <StatCard accent="orange" icon={FiFileText} title="Pending Collections" value={data.collections.filter((item) => item.status !== 'Paid').length} meta="Needs follow-up or posting" />
+        <StatCard accent="green" icon={FiDollarSign} title="Total Payments" value={formatCurrency(getCollectionTotal(data.payments))} />
+        <StatCard accent="blue" icon={FiCreditCard} title="Payment Count" value={data.payments.length} />
+        <StatCard accent="orange" icon={FiFileText} title="Pending Collections" value={data.collections.filter((item) => item.status !== 'Paid').length} />
       </div>
 
       <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-950">

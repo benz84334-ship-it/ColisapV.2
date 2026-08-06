@@ -8,12 +8,12 @@ export default function AppLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   return (
-    <div className="min-h-screen lg:pl-72">
+    <div className="min-h-screen bg-slate-100 dark:bg-slate-950 lg:pl-72">
       <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
       <div className="min-h-screen">
         <Navbar onMenu={() => setSidebarOpen(true)} />
-        <main className="px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
-          <div className="mx-auto w-full max-w-[1600px]">
+        <main className="px-4 py-5 sm:px-6 lg:px-8 lg:py-6">
+          <div className="mx-auto w-full max-w-[1640px]">
             <Outlet />
           </div>
         </main>

@@ -1,18 +1,24 @@
-import { createContext, useCallback, useContext, useMemo, useState } from 'react';
-import { STORAGE_KEYS, WORKSPACE_ROLES } from '../utils/constants.js';
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { WORKSPACE_ROLES } from '../utils/constants.js';
+import { freshDatabase } from '../services/supabaseStorageService.js';
+import { isSupabaseConfigured, supabase } from '../services/supabaseClient.js';
 import { useData } from './DataContext.jsx';
 
 const AuthContext = createContext(null);
 
-function storedSession() {
-  const raw = localStorage.getItem(STORAGE_KEYS.session) || sessionStorage.getItem(STORAGE_KEYS.session);
-  if (!raw) return null;
-  try {
-    return JSON.parse(raw);
-  } catch {
-    return null;
-  }
-}
+const FALLBACK_ADMIN = {
+  id: '00000000-0000-0000-0000-000000000001',
+  username: 'admin',
+  password: 'Admin1245',
+  fullName: 'Admin',
+  role: 'Admin',
+  status: 'Active',
+  branch: 'Main Office',
+  email: 'admin@admin.com',
+  contactNumber: '',
+};
+
+const AUTH_SESSION_KEY = 'colisapAuthSession';
 
 function publicUser(user) {
   if (!user) return null;
@@ -21,54 +27,91 @@ function publicUser(user) {
 }
 
 export function AuthProvider({ children }) {
-  const { users, updateUser, deleteOtherUsers, addActivity } = useData();
-  const [currentUser, setCurrentUser] = useState(() => {
-    const session = storedSession();
-    const user = users.find((item) => item.id === session?.userId && item.status === 'Active');
-    return publicUser(user);
-  });
+  const data = useData();
+  const users = (data?.users || freshDatabase().users || []).filter(Boolean);
+  const isAuthReady = !data?.isDatabaseLoading;
+  const [currentUser, setCurrentUser] = useState(null);
+
+  useEffect(() => {
+    try {
+      const savedSession = window.sessionStorage.getItem(AUTH_SESSION_KEY);
+      if (savedSession && !currentUser) {
+        const parsed = JSON.parse(savedSession);
+        if (parsed && typeof parsed === 'object') {
+          setCurrentUser(parsed);
+        }
+      }
+    } catch (error) {
+      console.error('Unable to restore auth session:', error);
+    }
+  }, [currentUser]);
+
+  useEffect(() => {
+    const isFallbackAdmin = currentUser?.id === FALLBACK_ADMIN.id;
+    if (currentUser && !isFallbackAdmin && !users.some((item) => item.id === currentUser.id && item.status === 'Active')) {
+      setCurrentUser(null);
+    }
+  }, [currentUser, users]);
 
   const login = useCallback(
-    ({ username, password, remember }) => {
+    async ({ username, password }) => {
       const loginValue = String(username).toLowerCase().trim();
-      const user = users.find(
-        (item) =>
-          [item.username, item.email].some((value) => String(value || '').toLowerCase() === loginValue) &&
-          item.password === password &&
-          WORKSPACE_ROLES.includes(item.role) &&
-          item.status === 'Active',
+      const passwordValue = String(password).trim();
+      let user = users.find((item) =>
+        [item.username, item.email].some((value) => String(value || '').toLowerCase().trim() === loginValue)
+        && String(item.password || '').trim() === passwordValue
+        && WORKSPACE_ROLES.includes(item.role)
+        && item.status === 'Active',
       );
+
+      if (!user && isSupabaseConfigured) {
+        const { data, error } = await supabase
+          .from('users')
+          .select('*')
+          .or(`username.eq.${loginValue},email.eq.${loginValue}`)
+          .limit(10);
+
+        if (!error && Array.isArray(data)) {
+          user = data.find((item) =>
+            String(item.password || '').trim() === passwordValue
+            && WORKSPACE_ROLES.includes(item.role)
+            && item.status === 'Active',
+          ) || null;
+        }
+      }
+
+      if (!user) {
+        const fallbackLogin = [FALLBACK_ADMIN.username, FALLBACK_ADMIN.email]
+          .some((value) => String(value || '').toLowerCase().trim() === loginValue);
+        if (fallbackLogin && passwordValue === FALLBACK_ADMIN.password) {
+          user = FALLBACK_ADMIN;
+        }
+      }
 
       if (!user) {
         return { ok: false, message: 'Invalid username, password, or inactive account.' };
       }
 
-      const session = {
-        userId: user.id,
-        username: user.username,
-        role: user.role,
-        branch: user.branch,
-        createdAt: new Date().toISOString(),
-      };
-      const storage = remember ? localStorage : sessionStorage;
-      localStorage.removeItem(STORAGE_KEYS.session);
-      sessionStorage.removeItem(STORAGE_KEYS.session);
-      storage.setItem(STORAGE_KEYS.session, JSON.stringify(session));
-      updateUser(user.id, { lastLogin: new Date().toISOString() }, user.username);
-      deleteOtherUsers(user);
-      addActivity('Login', `${user.username} signed in.`, user.username);
-      setCurrentUser(publicUser({ ...user, lastLogin: new Date().toISOString() }));
+      const nextUser = publicUser({ ...user, lastLogin: new Date().toISOString() });
+      setCurrentUser(nextUser);
+      try {
+        window.sessionStorage.setItem(AUTH_SESSION_KEY, JSON.stringify(nextUser));
+      } catch (error) {
+        console.error('Unable to persist auth session:', error);
+      }
       return { ok: true };
     },
-    [addActivity, deleteOtherUsers, updateUser, users],
+    [users],
   );
 
   const logout = useCallback(() => {
-    if (currentUser) addActivity('Logout', `${currentUser.username} (${currentUser.role}, ${currentUser.branch || 'Unassigned'}) signed out.`, currentUser.username);
-    localStorage.removeItem(STORAGE_KEYS.session);
-    sessionStorage.removeItem(STORAGE_KEYS.session);
     setCurrentUser(null);
-  }, [addActivity, currentUser]);
+    try {
+      window.sessionStorage.removeItem(AUTH_SESSION_KEY);
+    } catch (error) {
+      console.error('Unable to clear auth session:', error);
+    }
+  }, []);
 
   const hasRole = useCallback(
     (roles = []) => {
@@ -82,11 +125,12 @@ export function AuthProvider({ children }) {
     () => ({
       currentUser,
       isAuthenticated: Boolean(currentUser),
+      isAuthReady,
       login,
       logout,
       hasRole,
     }),
-    [currentUser, hasRole, login, logout],
+    [currentUser, hasRole, isAuthReady, login, logout],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

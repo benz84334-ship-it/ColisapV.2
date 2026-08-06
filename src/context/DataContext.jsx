@@ -1,12 +1,14 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { createBackupPayload } from '../utils/exporters.js';
-import { nextCifNumber, todayIso } from '../utils/formatters.js';
+import { nextCifNumber, normalizeContactNumber, todayIso } from '../utils/formatters.js';
 import { getLoanBalance, getLoanMonthlyPenalty, getLoanPenaltyDue } from '../utils/analytics.js';
-import { normalizeBranchName } from '../utils/constants.js';
+import { normalizeBenefitCategory, normalizeBranchName, STORAGE_KEYS } from '../utils/constants.js';
 import { applyComputedMemberStatuses, getComputedMemberStatus, getLastShareCapitalDepositDate, getMembersApproachingStatusChange } from '../utils/memberStatus.js';
+import { sendSms } from '../services/smsService.js';
 import {
   freshDatabase,
   loadDatabaseFromSupabase,
+  approveMemberRequestInSupabase,
   resetSupabaseDatabase,
   restoreSupabaseDatabase,
   saveSupabaseKey,
@@ -23,14 +25,69 @@ function nextId(prefix, items) {
   return `${prefix}-${String(max + 1).padStart(4, '0')}`;
 }
 
-function nextMemberId(members = [], registrationDate = todayIso()) {
-  const year = String(registrationDate || todayIso()).slice(0, 4);
-  const pattern = new RegExp(`^CIFK-${year}-(\\d{6})$`, 'i');
-  const highest = members.reduce((max, member) => {
-    const match = String(member.memberId || '').match(pattern);
-    return match ? Math.max(max, Number(match[1])) : max;
+function uniqueRequestId(prefix = 'MR') {
+  const token = globalThis.crypto?.randomUUID?.()
+    ? globalThis.crypto.randomUUID().replace(/-/g, '').slice(0, 12).toUpperCase()
+    : `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`.toUpperCase();
+  return `${prefix}-${token}`;
+}
+
+function currentYearValue(date = new Date()) {
+  return new Date(date).getFullYear();
+}
+
+function nextYearlySequence(items = [], pattern) {
+  return items.reduce((max, item) => {
+    const match = String(item.id || '').match(pattern);
+    if (!match) return max;
+    return Math.max(max, Number(match[1]));
   }, 0);
-  return `CIFK-${year}-${String(highest + 1).padStart(6, '0')}`;
+}
+
+function nextMemberId(members = [], registrationDate = todayIso()) {
+  const year = currentYearValue(new Date(registrationDate));
+  const used = new Set(members.reduce((values, member) => {
+    const cifMatch = String(member.cifNumber || '').match(/^CIFK-\d{4}-(\d{5})$/i);
+    const memberMatch = String(member.memberId || '').match(/^CIFK-\d{4}-(\d{5})$/i);
+    const legacyDigits = String(member.memberId || '').match(/(\d+)$/);
+    const value = cifMatch?.[1] || memberMatch?.[1] || legacyDigits?.[1];
+    if (value) values.push(String(value).padStart(6, '0'));
+    return values;
+  }, []));
+
+  let randomValue = '';
+  do {
+    randomValue = String(Math.floor(100000 + Math.random() * 900000));
+  } while (used.has(randomValue));
+
+  return `CIFK-${year}-${randomValue}`;
+}
+
+function nextMemberRowId(members = []) {
+  const year = currentYearValue();
+  const highest = nextYearlySequence(members, new RegExp(`^REQ-(${year})-(\\d{5})$`, 'i'));
+  return `REQ-${year}-${String(highest + 1).padStart(5, '0')}`;
+}
+
+function nextRandomCifNumber(members = [], date = new Date()) {
+  const year = currentYearValue(date);
+  const used = new Set(
+    members.flatMap((member) => {
+      const matches = [];
+      const cifMatch = String(member.cifNumber || '').match(/^CIFK-\d{4}-(\d{5})$/i);
+      const memberMatch = String(member.memberId || '').match(/^CIFK-\d{4}-(\d{5})$/i);
+      if (cifMatch?.[1]) matches.push(cifMatch[1]);
+      if (memberMatch?.[1]) matches.push(memberMatch[1]);
+      return matches;
+    }),
+  );
+
+  let suffix = '';
+  do {
+    suffix = String(Math.floor(10000 + Math.random() * 90000));
+  } while (used.has(suffix));
+
+  return `CIFK-${year}-${suffix}`;
 }
 
 function placeholderPhoto() {
@@ -76,6 +133,7 @@ function withMemberPhoto(member = {}) {
 
   return {
     ...member,
+    benefitCategory: normalizeBenefitCategory(member.benefitCategory || member.plan || ''),
     barangay: /,\s*Antique$/i.test(String(member.barangay || ''))
       ? member.barangay
       : `${String(member.barangay || '').trim()}, Antique`.replace(/^,\s*/, ''),
@@ -98,21 +156,85 @@ function getLoanStatus(loan, paymentTotal = loan.paidAmount) {
   return 'Active';
 }
 
+function memberRowToAppMember(row = {}) {
+  return {
+    id: row.id,
+    memberId: row.member_id,
+    cifNumber: row.cif_number,
+    applicationStatus: row.application_status,
+    firstName: row.first_name,
+    middleName: row.middle_name,
+    lastName: row.last_name,
+    fullName: row.full_name,
+    address: row.address,
+    barangay: row.barangay,
+    birthdate: row.birthdate,
+    ageYears: row.age_years,
+    ageMonths: row.age_months,
+    gender: row.gender,
+    civilStatus: row.civil_status,
+    contactNumber: normalizeContactNumber(row.contact_number),
+    occupation: row.occupation,
+    employer: row.employer,
+    officeAddress: row.office_address,
+    religion: row.religion,
+    dependents: row.dependents,
+    savingsAccountNo: row.savings_account_no,
+    membershipDate: row.membership_date,
+    signedDate: row.signed_date,
+    witnessStaff: row.witness_staff,
+    actionTaken: row.action_taken,
+    approvingAuthority: row.approving_authority,
+    approvalDate: row.approval_date,
+    findings: row.findings,
+    status: row.status,
+    statusOverride: row.status_override,
+    branch: row.branch,
+    shareCapital: row.share_capital,
+    lastShareCapitalDepositDate: row.last_share_capital_deposit_date,
+    benefitCategory: normalizeBenefitCategory(row.benefit_category),
+    beneficiaries: row.beneficiaries || [],
+    photo: row.photo,
+    metadata: row.metadata || {},
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function matchesRequestKey(request = {}, key) {
+  const normalizedKey = String(key || '').trim();
+  if (!normalizedKey) return false;
+  return request.id === normalizedKey || request.requestId === normalizedKey;
+}
+
+function stripRequestIdentity(request = {}) {
+  const {
+    id,
+    requestId,
+    ...rest
+  } = request || {};
+  return rest;
+}
+
 export function DataProvider({ children }) {
   const [database, setDatabase] = useState(() => freshDatabase());
   const [isDatabaseLoading, setIsDatabaseLoading] = useState(true);
   const [databaseError, setDatabaseError] = useState('');
   const [systemDate, setSystemDate] = useState(() => todayIso());
+  const [smsDebugLogs, setSmsDebugLogs] = useState([]);
 
   useEffect(() => {
     let active = true;
     loadDatabaseFromSupabase()
       .then((remoteDatabase) => {
-        if (active) setDatabase(remoteDatabase);
+        if (active) {
+          setDatabase(remoteDatabase);
+          setDatabaseError('');
+        }
       })
       .catch((error) => {
         console.error(error);
-        if (active) setDatabaseError(error.message);
+        if (active) setDatabaseError(error.message || 'Supabase unavailable.');
       })
       .finally(() => {
         if (active) setIsDatabaseLoading(false);
@@ -144,13 +266,36 @@ export function DataProvider({ children }) {
     [database.loans, database.members, systemDate],
   );
 
+  const requestsWithComputedCifNumbers = useMemo(
+    () => (database.requests || []).map((request) => {
+      const matchedMember = membersWithComputedStatuses.find((member) =>
+        member.memberId === request.memberId
+        || member.cifNumber === request.cifNumber
+        || (request.fullName && member.fullName === request.fullName),
+      );
+      const requestKind = request.requestKind || request.metadata?.requestKind || request.metadata?.claimantApplication?.requestKind || 'member';
+      const approvalQueue = request.approvalQueue || request.metadata?.approvalQueue || request.metadata?.claimantApplication?.approvalQueue || '';
+
+      return {
+        ...request,
+        requestKind,
+        approvalQueue,
+        cifNumber: request.cifNumber || request.memberId || matchedMember?.memberId || matchedMember?.cifNumber || '',
+        memberId: request.memberId || request.cifNumber || matchedMember?.memberId || matchedMember?.cifNumber || '',
+        benefitCategory: normalizeBenefitCategory(request.benefitCategory || request.plan || matchedMember?.benefitCategory || ''),
+      };
+    }),
+    [database.requests, membersWithComputedStatuses],
+  );
+
   const visibleDatabase = useMemo(
     () => ({
       ...database,
       members: membersWithComputedStatuses,
+      requests: requestsWithComputedCifNumbers,
       systemDate,
     }),
-    [database, membersWithComputedStatuses, systemDate],
+    [database, membersWithComputedStatuses, requestsWithComputedCifNumbers, systemDate],
   );
 
   useEffect(() => {
@@ -158,16 +303,23 @@ export function DataProvider({ children }) {
     document.documentElement.classList.toggle('dark', theme === 'dark');
   }, [database.settings?.theme]);
 
+  const persistKey = useCallback(
+    async (key, nextValue) => {
+      await saveSupabaseKey(key, nextValue);
+    },
+    [],
+  );
+
   const updateKey = useCallback((key, updater) => {
     setDatabase((current) => {
       const nextValue = typeof updater === 'function' ? updater(current[key]) : updater;
-      saveSupabaseKey(key, nextValue).catch((error) => {
+      persistKey(key, nextValue).catch((error) => {
         console.error(error);
-        setDatabaseError(error.message);
+        setDatabaseError(error.message || 'Unable to sync to Supabase.');
       });
       return { ...current, [key]: nextValue };
     });
-  }, []);
+  }, [persistKey]);
 
   const addActivity = useCallback(
     (action, detail, user = 'System') => {
@@ -186,13 +338,14 @@ export function DataProvider({ children }) {
   );
 
   const addNotification = useCallback(
-    (title, message, type = 'info') => {
+    (title, message, type = 'info', extra = {}) => {
       updateKey('notifications', (items = []) => [
         {
           id: nextId('NOT', items),
           title,
           message,
           type,
+          ...extra,
           read: false,
           createdAt: new Date().toISOString(),
         },
@@ -209,21 +362,41 @@ export function DataProvider({ children }) {
     [updateKey],
   );
 
+  const markAllNotificationsRead = useCallback(
+    () => {
+      updateKey('notifications', (items = []) => items.map((item) => (item.read ? item : { ...item, read: true })));
+    },
+    [updateKey],
+  );
+
   const createMember = useCallback(
     (member, user) => {
+      const currentMembers = database.members || [];
+      const generatedMemberRowId = nextMemberRowId(currentMembers);
+      const nextMemberIdCode = member.memberId || nextMemberId(currentMembers, member.membershipDate || todayIso());
+      const nextBeneficiaries = normalizeBeneficiaries(member.beneficiaries).map((beneficiary, index) => ({
+        ...beneficiary,
+        memberId: generatedMemberRowId,
+        sortOrder: index,
+      }));
       updateKey('members', (members = []) => {
         const nextMember = {
           ...member,
           branch: member.branch || getActorBranch(database.users, user),
-          id: nextId('MEM', members),
-          memberId: member.memberId || nextMemberId(members, member.membershipDate || todayIso()),
+          id: generatedMemberRowId,
+          memberId: nextMemberIdCode,
           cifNumber: member.cifNumber || nextCifNumber(members),
           photo: member.photo || avatarForName(member.fullName),
           lastShareCapitalDepositDate: member.lastShareCapitalDepositDate || todayIso(),
+          beneficiaries: nextBeneficiaries,
           createdAt: new Date().toISOString(),
         };
 
         return [{ ...nextMember, status: getComputedMemberStatus(nextMember, database.loans) }, ...members];
+      });
+      saveSupabaseKey('memberBeneficiaries', nextBeneficiaries).catch((error) => {
+        console.error(error);
+        setDatabaseError(error.message || 'Unable to sync beneficiaries to Supabase. Changes saved locally.');
       });
       addActivity('Added Member', `${member.fullName} was added to member records.`, user);
       addNotification('New member', `${member.fullName} is now registered.`, 'success');
@@ -231,8 +404,328 @@ export function DataProvider({ children }) {
     [addActivity, addNotification, database.loans, updateKey],
   );
 
+  const nextRequestNumber = useCallback((requests = []) => {
+    const year = currentYearValue();
+    const candidatePools = [...(database.members || []), ...requests];
+    const highest = candidatePools.reduce((max, item) => {
+      const value = String(item.requestId || item.id || item.memberId || '').trim();
+      const match = value.match(/^REQ-(\d{4})-(\d{5})$/i);
+      if (!match || Number(match[1]) !== year) return max;
+      return Math.max(max, Number(match[2]));
+    }, 0);
+    return `REQ-${year}-${String(highest + 1).padStart(5, '0')}`;
+  }, [database.members]);
+
+  const createRequest = useCallback(
+    async (request, user) => {
+      const requests = database.requests || [];
+      const nextCifValue = request.cifNumber || nextCifNumber([...(database.members || []), ...requests]);
+      const requestKind = request.requestKind || request.metadata?.requestKind || 'member';
+      const approvalQueue = request.approvalQueue || request.metadata?.approvalQueue || '';
+      const claimNumber = request.claimNumber || request.metadata?.claimantApplication?.claimNumber || '';
+      const claimantName = request.claimantName || request.metadata?.claimantName || '';
+      const isClaimantRequest = requestKind === 'claimant' || approvalQueue === 'claimant' || request.requestType === 'Claimant Application';
+      const nextRequestNumberValue = isClaimantRequest ? uniqueRequestId('CLM') : nextRequestNumber(requests);
+      const nextRequest = {
+        ...stripRequestIdentity(request),
+        id: request.id || nextRequestNumberValue,
+        requestId: request.requestId || nextRequestNumberValue,
+        requestType: isClaimantRequest ? 'Claimant Application' : (request.requestType || 'Member Request'),
+        requestKind,
+        approvalQueue: isClaimantRequest ? 'claimant' : approvalQueue,
+        memberId: null,
+        cifNumber: nextCifValue,
+        requestStatus: 'Pending',
+        requestedBy: request.requestedBy || user,
+        submittedAt: new Date().toISOString(),
+        createdAt: new Date().toISOString(),
+        claimNumber,
+        claimantName,
+      };
+      const nextRequests = [nextRequest, ...requests];
+      setDatabase((current) => ({ ...current, requests: nextRequests }));
+      await saveSupabaseKey('requests', [nextRequest]);
+      addActivity('Submitted Member Request', `${request.fullName || 'Member request'} was submitted.`, user);
+      addNotification('New member request', `${request.fullName || 'A member request'} was sent for manager approval.`, 'info');
+    },
+    [addActivity, addNotification, database.requests, nextRequestNumber],
+  );
+
+  const updateRequest = useCallback(
+    async (id, request, user) => {
+      const requests = (database.requests || []).map((item) => {
+        if (!matchesRequestKey(item, id)) return item;
+        const merged = { ...item, ...request };
+        const isClaimantRequest = merged.requestKind === 'claimant' || merged.approvalQueue === 'claimant' || merged.requestType === 'Claimant Application';
+        return {
+          ...merged,
+          requestType: isClaimantRequest ? 'Claimant Application' : (merged.requestType || 'Member Request'),
+          requestKind: isClaimantRequest ? 'claimant' : (merged.requestKind || 'member'),
+          approvalQueue: isClaimantRequest ? 'claimant' : (merged.approvalQueue || ''),
+        };
+      });
+      setDatabase((current) => ({ ...current, requests }));
+      const updatedRequest = requests.find((item) => matchesRequestKey(item, id));
+      if (updatedRequest) {
+        await saveSupabaseKey('requests', [updatedRequest]);
+      }
+      addActivity('Updated Member Request', `${request.fullName || 'Request'} was updated.`, user);
+    },
+    [addActivity, database.requests],
+  );
+
+  const approveRequest = useCallback(
+    async (idOrRequestKey, approvalData = {}, user) => {
+      const request = database.requests.find(
+        (item) => matchesRequestKey(item, idOrRequestKey),
+      );
+      if (!request) return;
+      const approvalReason = String(approvalData.approvalReason || '').trim() || `Approved by ${user || 'reviewer'}.`;
+      const approvedBy = approvalData.approvedBy || user || 'System';
+      const now = new Date().toISOString();
+      const isClaimRequest = request.requestKind === 'claimant' || request.requestType === 'Claimant Application';
+      const matchedDeceasedMember = isClaimRequest
+        ? (database.members || []).find((member) =>
+            String(member.id || '').trim() === String(request.memberId || '').trim()
+            || String(member.memberId || '').trim() === String(request.memberId || '').trim()
+            || String(member.cifNumber || '').trim() === String(request.cifNumber || '').trim()
+            || (request.fullName && String(member.fullName || '').trim() === String(request.fullName || '').trim()))
+        : null;
+      const resolvedMemberId = matchedDeceasedMember?.id || request.memberId || null;
+      const resolvedCifNumber = matchedDeceasedMember?.cifNumber || matchedDeceasedMember?.memberId || request.cifNumber || null;
+      const resolvedMemberName = matchedDeceasedMember?.fullName || request.fullName || request.memberName || '';
+      const resolveClaimAmount = (source) => {
+        const text = String(source || '').toLowerCase();
+        if (text.includes('60')) return 60000;
+        if (text.includes('40')) return 40000;
+        return Number(request.shareCapital || 0);
+      };
+      const resolvedAvailmentAmount = resolveClaimAmount(
+        request.benefitCategory
+        || request.metadata?.claimantApplication?.benefitCategory
+        || matchedDeceasedMember?.benefitCategory
+        || request.metadata?.claimantApplication?.deceased?.coverageStatus
+        || '',
+      );
+      const nextMemberRowIdValue = nextMemberRowId(database.members || []);
+      const approvedMember = isClaimRequest ? null : {
+        id: nextMemberRowIdValue,
+        memberId: nextMemberId(database.members || [], request.membershipDate || now.slice(0, 10)),
+        cifNumber: request.cifNumber || nextRandomCifNumber(database.members || [], request.membershipDate || now.slice(0, 10)),
+        applicationStatus: request.applicationStatus || 'New',
+        firstName: request.firstName,
+        middleName: request.middleName,
+        lastName: request.lastName,
+        fullName: request.fullName,
+        address: request.address,
+        barangay: request.barangay,
+        birthdate: request.birthdate,
+        ageYears: request.ageYears,
+        ageMonths: request.ageMonths,
+        gender: request.gender,
+        civilStatus: request.civilStatus,
+      contactNumber: normalizeContactNumber(request.contactNumber),
+        occupation: request.occupation,
+        employer: request.employer,
+        officeAddress: request.officeAddress,
+        religion: request.religionOther || request.religion,
+        dependents: request.dependents ?? 0,
+        savingsAccountNo: request.savingsAccountNo,
+        membershipDate: request.membershipDate || now.slice(0, 10),
+        signedDate: request.signedDate || now.slice(0, 10),
+        witnessStaff: request.witnessStaff,
+        actionTaken: 'Approved',
+        approvingAuthority: approvedBy,
+        approvalDate: now.slice(0, 10),
+        findings: request.findings,
+        status: 'Active',
+        statusOverride: null,
+        branch: request.branch || 'Main Office',
+        shareCapital: request.shareCapital ?? 0,
+        lastShareCapitalDepositDate: request.lastShareCapitalDepositDate || now.slice(0, 10),
+        benefitCategory: request.benefitCategory,
+        beneficiaries: request.beneficiaries || [],
+        photo: request.photo,
+        metadata: request.metadata || {},
+        createdAt: request.createdAt || now,
+        updatedAt: now,
+      };
+      const approvedAvailment = isClaimRequest ? {
+        memberId: resolvedMemberId,
+        memberName: resolvedMemberName,
+        reference: resolvedCifNumber || request.claimNumber || request.requestId || '',
+        claimNumber: request.claimNumber || request.requestId || '',
+        dateFiled: request.submittedAt ? request.submittedAt.slice(0, 10) : now.slice(0, 10),
+        claimantFirstName: request.metadata?.claimantApplication?.claimantFirstName || request.firstName || '',
+        claimantMiddleName: request.metadata?.claimantApplication?.claimantMiddleName || request.middleName || '',
+        claimantLastName: request.metadata?.claimantApplication?.claimantLastName || request.lastName || '',
+        claimantSuffix: request.metadata?.claimantApplication?.claimantSuffix || request.suffixName || '',
+        claimantName: request.metadata?.claimantName || request.fullName || '',
+        relationshipToDeceased: request.metadata?.claimantApplication?.relationshipToDeceased || '',
+        contactNumber: normalizeContactNumber(request.metadata?.claimantApplication?.contactNumber || request.contactNumber || ''),
+        claimantAddress: request.metadata?.claimantApplication?.claimantAddress || request.address || '',
+        validIdType: request.metadata?.claimantApplication?.validIdType || '',
+        validIdNumber: request.metadata?.claimantApplication?.validIdNumber || '',
+        registeredBeneficiary: request.metadata?.claimantApplication?.registeredBeneficiary || '',
+        claimantSignature: request.metadata?.claimantApplication?.claimantSignature || '',
+        dateSigned: request.metadata?.claimantApplication?.dateSigned || request.signedDate || now.slice(0, 10),
+        verifiedBy: approvalData.verifiedBy || approvedBy,
+        recommendation: approvalData.recommendation || 'For Approval',
+        approvedAmount: resolvedAvailmentAmount,
+        approvedBy,
+        dateApproved: now.slice(0, 10),
+        availmentType: 'Burial Assistance',
+        branch: request.branch || 'Main Office',
+        amount: resolvedAvailmentAmount,
+        status: 'Approved',
+        claimStatus: 'Approved',
+        availmentDate: now.slice(0, 10),
+        deceasedMemberId: resolvedMemberId,
+        deceasedCifNumber: resolvedCifNumber,
+        deceasedFirstName: matchedDeceasedMember?.firstName || request.firstName || '',
+        deceasedMiddleName: matchedDeceasedMember?.middleName || request.middleName || '',
+        deceasedLastName: matchedDeceasedMember?.lastName || request.lastName || '',
+        deceasedSuffix: matchedDeceasedMember?.suffixName || request.suffixName || '',
+        deceasedFullName: matchedDeceasedMember?.fullName || request.fullName || '',
+        deceasedDateOfBirth: matchedDeceasedMember?.birthdate || request.birthdate || null,
+        deceasedDateOfDeath: request.metadata?.claimantApplication?.deceased?.dateOfDeath || null,
+        deceasedCivilStatus: matchedDeceasedMember?.civilStatus || request.civilStatus || '',
+        deceasedMembershipDate: matchedDeceasedMember?.membershipDate || request.membershipDate || null,
+        deceasedCoverageStatus: request.metadata?.claimantApplication?.deceased?.coverageStatus || matchedDeceasedMember?.status || '',
+        deceasedBenefitCategory: matchedDeceasedMember?.benefitCategory || request.benefitCategory || '',
+        placeOfDeath: request.findings || '',
+        causeOfDeath: request.actionTaken || '',
+        dateOfBurial: request.lastShareCapitalDepositDate || null,
+        placeOfBurial: request.officeAddress || '',
+        funeralHome: request.metadata?.claimantApplication?.deceased?.funeralHome || '',
+        totalFuneralExpenses: resolvedAvailmentAmount,
+        supportingDocuments: Array.isArray(request.metadata?.claimantApplication?.docs) ? request.metadata.claimantApplication.docs.join(', ') : '',
+        remarks: request.approvalReason || '',
+        metadata: request.metadata || {},
+      } : null;
+      const approvedRequest = {
+        ...request,
+        requestStatus: 'Approved',
+        approvedBy,
+        approvedAt: now,
+        updatedAt: now,
+        status: 'Approved',
+        memberId: isClaimRequest ? (approvedMember?.id || request.memberId || null) : null,
+        cifNumber: approvedMember?.cifNumber || request.cifNumber || null,
+        actionTaken: 'Approved',
+        approvalReason,
+      };
+      const requestKeys = new Set([request.id, request.requestId].filter(Boolean));
+      const nextRequests = (database.requests || []).map((item) =>
+        requestKeys.has(item.id) || requestKeys.has(item.requestId) ? approvedRequest : item,
+      );
+      const nextMembers = isClaimRequest
+        ? (database.members || [])
+        : [
+            approvedMember,
+            ...(database.members || []).filter((member) => member.id !== approvedMember.id),
+          ];
+      if (isClaimRequest && approvedAvailment) {
+        const availments = database.availments || [];
+        const existingAvailment = availments.find((item) =>
+          String(item.claimNumber || '').trim() === String(approvedAvailment.claimNumber || '').trim()
+          || String(item.reference || '').trim() === String(approvedAvailment.reference || '').trim()
+        );
+        const nextAvailment = existingAvailment
+          ? {
+              ...existingAvailment,
+              ...approvedAvailment,
+              id: existingAvailment.id,
+              monitoringReference: existingAvailment.monitoringReference,
+              updatedAt: now,
+            }
+          : {
+              ...approvedAvailment,
+              id: nextId('AVM', availments),
+              monitoringReference: `AVM-${String(availments.length + 1).padStart(5, '0')}`,
+              createdAt: now,
+              createdBy: user,
+            };
+        const nextAvailments = existingAvailment
+          ? availments.map((item) => (item.id === existingAvailment.id ? nextAvailment : item))
+          : [nextAvailment, ...availments];
+        setDatabase((current) => ({ ...current, availments: nextAvailments }));
+        await saveSupabaseKey('availments', nextAvailments);
+      } else {
+        setDatabase((current) => ({ ...current, members: nextMembers }));
+      }
+      setDatabase((current) => ({
+        ...current,
+        requests: nextRequests,
+        members: nextMembers,
+      }));
+      await saveSupabaseKey('requests', [approvedRequest]);
+
+      addActivity(isClaimRequest ? 'Approved Claimant Application' : 'Approved Member Request', `${approvedRequest.fullName || 'Request'} was approved.`, user);
+      addNotification('Request approved', `${approvedRequest.fullName || 'A member request'} was approved.`, 'success', {
+        actionType: 'approve',
+        reason: approvalReason,
+        recipient: approvedRequest.requestedBy,
+      });
+    },
+    [addActivity, addNotification, database.requests],
+  );
+
+  const rejectRequest = useCallback(
+    (id, rejectionData = {}, user) => {
+      const request = database.requests.find((item) => matchesRequestKey(item, id));
+      if (!request) return;
+
+      const reason = String(rejectionData.rejectionReason || '').trim();
+      const rejectedRequest = { ...request, ...rejectionData, requestStatus: 'Rejected', rejectedAt: new Date().toISOString() };
+      updateKey('requests', (requests = []) =>
+        requests.map((item) => (matchesRequestKey(item, id) ? rejectedRequest : item)),
+      );
+      saveSupabaseKey('requests', [rejectedRequest]).catch((error) => {
+        console.error(error);
+        setDatabaseError(error.message || 'Unable to sync rejected request to Supabase.');
+      });
+      addActivity('Rejected Member Request', `${rejectionData.fullName || 'Request'} was rejected.`, user);
+      addNotification('Request rejected', `${rejectionData.fullName || 'A member request'} was rejected.`, 'warning', {
+        actionType: 'reject',
+        reason,
+        recipient: rejectedRequest.requestedBy,
+      });
+    },
+    [addActivity, addNotification, database.requests, updateKey],
+  );
+
+  const returnRequest = useCallback(
+    (id, returnData = {}, user) => {
+      const request = database.requests.find((item) => matchesRequestKey(item, id));
+      if (!request) return;
+
+      const reason = String(returnData.returnReason || '').trim();
+      const returnedRequest = { ...request, ...returnData, requestStatus: 'Returned', returnedAt: new Date().toISOString() };
+      updateKey('requests', (requests = []) =>
+        requests.map((item) => (matchesRequestKey(item, id) ? returnedRequest : item)),
+      );
+      saveSupabaseKey('requests', [returnedRequest]).catch((error) => {
+        console.error(error);
+        setDatabaseError(error.message || 'Unable to sync returned request to Supabase.');
+      });
+      addActivity('Returned Member Request', `${returnData.fullName || 'Request'} was returned to staff for editing.`, user);
+      addNotification('Request returned to staff', `${returnData.fullName || 'A member request'} was sent back for editing due to missing requirements.`, 'info', {
+        actionType: 'return',
+        reason,
+        recipient: returnedRequest.requestedBy,
+      });
+    },
+    [addActivity, addNotification, database.requests, updateKey],
+  );
+
   const updateMember = useCallback(
     (id, member, user) => {
+      const nextBeneficiaries = normalizeBeneficiaries(member.beneficiaries || []).map((beneficiary, index) => ({
+        ...beneficiary,
+        memberId: id,
+        sortOrder: index,
+      }));
       updateKey('members', (members = []) =>
         members.map((item) => {
           if (item.id !== id) return item;
@@ -241,6 +734,7 @@ export function DataProvider({ children }) {
           const nextMember = {
             ...item,
             ...member,
+            beneficiaries: nextBeneficiaries,
             lastShareCapitalDepositDate: member.lastShareCapitalDepositDate || (shareCapitalIncreased ? todayIso() : getLastShareCapitalDepositDate(item)),
             photo: member.photo || item.photo || avatarForName(member.fullName),
           };
@@ -248,6 +742,10 @@ export function DataProvider({ children }) {
           return { ...nextMember, status: getComputedMemberStatus(nextMember, database.loans) };
         }),
       );
+      saveSupabaseKey('memberBeneficiaries', nextBeneficiaries).catch((error) => {
+        console.error(error);
+        setDatabaseError(error.message || 'Unable to sync beneficiaries to Supabase. Changes saved locally.');
+      });
       addActivity('Updated Member', `${member.fullName} profile was updated.`, user);
     },
     [addActivity, database.loans, updateKey],
@@ -261,6 +759,109 @@ export function DataProvider({ children }) {
     },
     [addActivity, database.members, updateKey],
   );
+
+  useEffect(() => {
+    if (isDatabaseLoading) return undefined;
+
+    const reminders = getMembersApproachingStatusChange(visibleDatabase.members || [], visibleDatabase.loans || [], systemDate);
+    if (!reminders.length) return undefined;
+
+    const prioritizedReminders = [...reminders].sort((left, right) => {
+      const leftIsMiguel = String(left.member?.fullName || '').trim().toLowerCase() === 'miguel herrera';
+      const rightIsMiguel = String(right.member?.fullName || '').trim().toLowerCase() === 'miguel herrera';
+      if (leftIsMiguel && !rightIsMiguel) return -1;
+      if (!leftIsMiguel && rightIsMiguel) return 1;
+      return 0;
+    });
+
+    let cancelled = false;
+
+    prioritizedReminders.forEach((item) => {
+      const member = item.member || {};
+      const reminderDay = item.reminderDay;
+      const contactNumber = normalizeContactNumber(member.contactNumber);
+
+      const memberName = member.fullName || 'Member';
+      const message = `Hello ${memberName}, this is a friendly reminder from Barbaza MPC. Your account will become dormant in ${reminderDay} days if no transaction or activity is made. Please visit any Barbaza MPC branch or contact us for assistance. Thank you.`;
+      const baseLog = {
+        id: `SMS-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        memberId: member.id || item.member?.memberId || memberName,
+        memberName,
+        contactNumber: contactNumber || 'None',
+        reminderDay,
+        message,
+        createdAt: new Date().toISOString(),
+      };
+
+      if (!member.id || !contactNumber) {
+        setSmsDebugLogs((current) => [
+          { ...baseLog, status: 'skipped', error: !member.id ? 'Missing member id' : 'Missing contact number' },
+          ...current,
+        ].slice(0, 25));
+        return;
+      }
+
+      setSmsDebugLogs((current) => [
+        { ...baseLog, status: 'pending' },
+        ...current,
+      ].slice(0, 25));
+
+      sendSms(contactNumber, message, {
+        memberId: member.id,
+        memberName: memberName,
+        reminderDay,
+      })
+        .then((result) => {
+          if (cancelled || result?.skipped) return;
+          const isLocallySaved = result?.data?.status === 'saved_locally' || result?.data?.saved_locally;
+          setSmsDebugLogs((current) => [
+            {
+              ...baseLog,
+              status: isLocallySaved ? 'saved_locally' : 'success',
+              contactNumber,
+              messageId: result?.data?.message_id || null,
+              response: result?.data || null,
+              createdAt: new Date().toISOString(),
+            },
+            ...current,
+          ].slice(0, 25));
+          addNotification(
+            isLocallySaved ? 'Dormant reminder saved locally' : 'Dormant reminder sent',
+            isLocallySaved
+              ? `${memberName} was saved locally for a ${reminderDay}-day reminder SMS.`
+              : `${memberName} received a ${reminderDay}-day reminder SMS.`,
+            isLocallySaved ? 'info' : 'success',
+          );
+          addActivity(
+            isLocallySaved ? 'Dormant Reminder Saved Locally' : 'Dormant Reminder Sent',
+            isLocallySaved
+              ? `Saved locally ${reminderDay}-day reminder SMS for ${memberName}.`
+              : `Sent ${reminderDay}-day reminder SMS to ${memberName}.`,
+            'System',
+          );
+        })
+        .catch((error) => {
+          if (cancelled) return;
+          console.error(error);
+          setSmsDebugLogs((current) => [
+            {
+              ...baseLog,
+              status: 'failed',
+              error: error?.message || 'SMS send failed',
+              response: error?.response || null,
+              contactNumber,
+              createdAt: new Date().toISOString(),
+            },
+            ...current,
+          ].slice(0, 25));
+          addNotification('Dormant reminder failed', `${memberName} reminder SMS could not be sent: ${error?.message || 'Unknown error'}.`, 'warning');
+        });
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [addActivity, addNotification, isDatabaseLoading, systemDate, visibleDatabase.loans, visibleDatabase.members]);
 
   const createLoan = useCallback(
     (loan, user) => {
@@ -459,28 +1060,46 @@ export function DataProvider({ children }) {
   );
 
   const createUser = useCallback(
-    (userRecord, user) => {
-      updateKey('users', (users = []) => [
-        {
-          ...userRecord,
-          branch: userRecord.branch || 'Main Office',
-          id: nextId('USR', users),
-          createdAt: new Date().toISOString(),
-          lastLogin: null,
-        },
-        ...users,
-      ]);
+    async (userRecord, user) => {
+      const normalizedId = String(userRecord.id || '').trim();
+      const payload = {
+        ...userRecord,
+        id: normalizedId || undefined,
+        branch: userRecord.branch || 'Main Office',
+        status: userRecord.status || 'Active',
+      };
+      const createdId = globalThis.crypto?.randomUUID?.() || `usr-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+      const nextUser = {
+        ...payload,
+        id: normalizedId || createdId,
+        branch: payload.branch || 'Main Office',
+        createdAt: new Date().toISOString(),
+        lastLogin: null,
+      };
+      const nextUsers = [
+        nextUser,
+        ...(database.users || []).filter((item) =>
+          item.id !== nextUser.id && String(item.username || '').toLowerCase().trim() !== String(nextUser.username || '').toLowerCase().trim(),
+        ),
+      ];
+      await saveSupabaseKey('users', nextUsers);
+      const refreshedDatabase = await loadDatabaseFromSupabase();
+      setDatabase(refreshedDatabase);
       addActivity('Created User', `${userRecord.username} account was created.`, user);
     },
-    [addActivity, updateKey],
+    [addActivity, database.users],
   );
 
   const updateUser = useCallback(
-    (id, userRecord, user) => {
-      updateKey('users', (users = []) => users.map((item) => (item.id === id ? { ...item, ...userRecord } : item)));
+    async (id, userRecord, user) => {
+      const nextUsers = (database.users || []).map((item) => (item.id === id ? { ...item, ...userRecord } : item));
+      setDatabase((current) => ({ ...current, users: nextUsers }));
+      await saveSupabaseKey('users', nextUsers);
+      const refreshedDatabase = await loadDatabaseFromSupabase();
+      setDatabase(refreshedDatabase);
       addActivity('Updated User', `${userRecord.username || 'User'} account was updated.`, user);
     },
-    [addActivity, updateKey],
+    [addActivity, database.users],
   );
 
   const deleteUser = useCallback(
@@ -511,16 +1130,26 @@ export function DataProvider({ children }) {
 
   const createReport = useCallback(
     (report, user) => {
-      updateKey('reports', (reports = []) => [
-        {
-          ...report,
-          branch: report.branch || getActorBranch(database.users, user),
-          id: nextId('RPT', reports),
-          generatedAt: new Date().toISOString(),
+      const now = new Date().toISOString();
+      const totalAmount = Number(report.totalAmount ?? (report.rows || []).reduce((sum, row) => sum + Number(row.amount || 0), 0) ?? 0);
+      const nextReport = {
+        ...report,
+        branch: report.branch || getActorBranch(database.users, user),
+        id: nextId('RPT', database.reports || []),
+        generatedAt: report.generatedAt || now,
+        generatedBy: user,
+        payload: {
+          ...(report.payload || {}),
+          title: report.title,
+          type: report.type,
+          period: report.period,
+          rows: report.rows || [],
+          totalAmount,
+          generatedAt: report.generatedAt || now,
           generatedBy: user,
         },
-        ...reports,
-      ]);
+      };
+      updateKey('reports', (reports = []) => [nextReport, ...reports]);
       addActivity('Generated Report', `${report.title} was generated.`, user);
     },
     [addActivity, updateKey],
@@ -528,17 +1157,25 @@ export function DataProvider({ children }) {
 
   const createAvailment = useCallback(
     (availment, user) => {
+      const resolveBenefitAmount = (value) => {
+        const text = String(value || '').toLowerCase();
+        if (text.includes('60')) return 60000;
+        if (text.includes('40')) return 40000;
+        return Number(availment.amount || 0);
+      };
       updateKey('availments', (items = []) => {
         const nextNumber = items.reduce((highest, item) => {
           const value = Number(String(item.monitoringReference || '').split('-').pop());
           return Number.isNaN(value) ? highest : Math.max(highest, value);
         }, 0) + 1;
+        const resolvedAmount = resolveBenefitAmount(availment.availmentType || availment.benefitCategory || availment.deceasedBenefitCategory);
         return [{
           ...availment,
           id: nextId('AVM', items),
           reference: availment.memberReference,
           monitoringReference: `AVM-${String(nextNumber).padStart(5, '0')}`,
-          amount: Number(availment.amount || 0),
+          amount: resolvedAmount,
+          approvedAmount: resolvedAmount,
           branch: availment.branch || getActorBranch(database.users, user),
           createdAt: new Date().toISOString(),
           createdBy: user,
@@ -584,14 +1221,26 @@ export function DataProvider({ children }) {
     [addActivity],
   );
 
+  const clearLocalData = useCallback(() => {
+    setDatabase(freshDatabase());
+    setDatabaseError('');
+    setSmsDebugLogs([]);
+  }, []);
+
   const value = useMemo(
     () => ({
       ...visibleDatabase,
       addActivity,
       addNotification,
       markNotificationRead,
+      markAllNotificationsRead,
       createMember,
+      createRequest,
       updateMember,
+      updateRequest,
+      approveRequest,
+      rejectRequest,
+      returnRequest,
       deleteMember,
       createLoan,
       updateLoan,
@@ -611,8 +1260,10 @@ export function DataProvider({ children }) {
       downloadBackup,
       restoreFromBackup,
       resetAllData,
+      clearLocalData,
       isDatabaseLoading,
       databaseError,
+      smsDebugLogs,
     }),
     [
       addActivity,
@@ -620,6 +1271,7 @@ export function DataProvider({ children }) {
       createCollection,
       createLoan,
       createMember,
+      createRequest,
       createReport,
       createAvailment,
       createUser,
@@ -631,15 +1283,22 @@ export function DataProvider({ children }) {
       deleteOtherUsers,
       downloadBackup,
       markNotificationRead,
+      markAllNotificationsRead,
       recordPayment,
       resetAllData,
+      clearLocalData,
       isDatabaseLoading,
       databaseError,
+      smsDebugLogs,
       restoreFromBackup,
       setTheme,
       updateCollection,
       updateLoan,
       updateMember,
+      updateRequest,
+      approveRequest,
+      rejectRequest,
+      returnRequest,
       updateSettings,
       updateUser,
     ],
@@ -647,22 +1306,7 @@ export function DataProvider({ children }) {
 
   return (
     <DataContext.Provider value={value}>
-      {isDatabaseLoading ? (
-        <div className="flex min-h-screen items-center justify-center bg-slate-50 text-sm font-semibold text-slate-600 dark:bg-slate-950 dark:text-slate-300">
-          Connecting to Supabase...
-        </div>
-      ) : databaseError ? (
-        <div className="flex min-h-screen items-center justify-center bg-slate-50 px-4 dark:bg-slate-950">
-          <div className="w-full max-w-lg rounded-lg border border-rose-200 bg-white p-6 shadow-sm dark:border-rose-500/30 dark:bg-slate-900">
-            <p className="text-sm font-bold uppercase tracking-widest text-rose-600 dark:text-rose-300">Backend not connected</p>
-            <h1 className="mt-3 text-2xl font-black text-slate-950 dark:text-white">Connect Vercel to Supabase</h1>
-            <p className="mt-3 text-sm leading-6 text-slate-600 dark:text-slate-300">{databaseError}</p>
-            <p className="mt-4 text-sm leading-6 text-slate-500 dark:text-slate-400">
-              Run the schema in Supabase SQL Editor, enable anonymous sign-ins, then add the Supabase project URL and publishable key to Vercel.
-            </p>
-          </div>
-        </div>
-      ) : children}
+      {children}
     </DataContext.Provider>
   );
 }

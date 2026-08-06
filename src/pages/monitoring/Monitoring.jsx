@@ -15,6 +15,7 @@ import { FiAlertTriangle, FiCheckCircle, FiDollarSign, FiPercent, FiTrendingUp, 
 import StatCard from '../../components/cards/StatCard.jsx';
 import ChartCard from '../../components/charts/ChartCard.jsx';
 import Badge from '../../components/ui/Badge.jsx';
+import PageHeader from '../../components/ui/PageHeader.jsx';
 import { useAuth } from '../../context/AuthContext.jsx';
 import { useData } from '../../context/DataContext.jsx';
 import { buildDashboardData, getBranchScopedData, getCollectionTotal } from '../../utils/analytics.js';
@@ -35,22 +36,21 @@ export default function Monitoring() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-black tracking-normal text-slate-950 dark:text-white">Colisap Monitoring</h1>
-        <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
-          Operational view of collection efficiency, active accounts, overdue exposure, and member payment behavior.
-        </p>
-      </div>
+      <PageHeader
+        eyebrow="Operations"
+        title="Colisap Monitoring"
+        description="Operational view of collection efficiency, active accounts, overdue exposure, and member payment behavior."
+      />
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard accent="teal" icon={FiUsers} title="Active Accounts" value={activeAccounts} meta="Loans currently in collection" />
-        <StatCard accent="orange" icon={FiUsers} title="Inactive Members" value={inactiveAccounts} meta="Members marked inactive" />
-        <StatCard accent="green" icon={FiCheckCircle} title="Completed Accounts" value={completedAccounts} meta="Loans fully paid" />
-        <StatCard accent="red" icon={FiAlertTriangle} title="Overdue Accounts" value={overdueAccounts} meta="Past due and unpaid" />
-        <StatCard accent="blue" icon={FiDollarSign} title="Monthly Collection" value={formatCurrency(monitoring.stats.monthlyCollection)} meta="Current month receipts" />
-        <StatCard accent="violet" icon={FiTrendingUp} title="Yearly Collection" value={formatCurrency(yearlyCollection)} meta={`${thisYear} posted collection`} />
-        <StatCard accent="green" icon={FiPercent} title="Collection Efficiency" value={`${monitoring.stats.collectionEfficiency}%`} meta="Paid collection records" />
-        <StatCard accent="orange" icon={FiPercent} title="Payment Percentage" value={`${monitoring.stats.paymentPercentage}%`} meta="Paid against total payable" />
+        <StatCard accent="teal" icon={FiUsers} title="Active Accounts" value={activeAccounts} />
+        <StatCard accent="orange" icon={FiUsers} title="Inactive Members" value={inactiveAccounts} />
+        <StatCard accent="green" icon={FiCheckCircle} title="Completed Accounts" value={completedAccounts} />
+        <StatCard accent="red" icon={FiAlertTriangle} title="Overdue Accounts" value={overdueAccounts} />
+        <StatCard accent="blue" icon={FiDollarSign} title="Monthly Collection" value={formatCurrency(monitoring.stats.monthlyCollection)} />
+        <StatCard accent="violet" icon={FiTrendingUp} title="Yearly Collection" value={formatCurrency(yearlyCollection)} />
+        <StatCard accent="green" icon={FiPercent} title="Collection Efficiency" value={`${monitoring.stats.collectionEfficiency}%`} />
+        <StatCard accent="orange" icon={FiPercent} title="Payment Percentage" value={`${monitoring.stats.paymentPercentage}%`} />
       </div>
 
       <div className="grid gap-6 xl:grid-cols-3">

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Navigate, useLocation } from 'react-router-dom';
+import { Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { FiEye, FiEyeOff, FiLock, FiMapPin, FiUser } from 'react-icons/fi';
 import { useAuth } from '../../context/AuthContext.jsx';
@@ -8,29 +8,35 @@ import Button from '../../components/ui/Button.jsx';
 import FormField from '../../components/forms/FormField.jsx';
 import Modal from '../../components/ui/Modal.jsx';
 import BrandMark from '../../components/brand/BrandMark.jsx';
+import LoadingSpinner from '../../components/ui/LoadingSpinner.jsx';
 
 export default function Login() {
-  const { isAuthenticated, login } = useAuth();
+  const { isAuthenticated, isAuthReady, login } = useAuth();
   const { showToast } = useToast();
   const location = useLocation();
-  const [form, setForm] = useState({ username: 'admin', password: 'admin123', remember: true });
+  const navigate = useNavigate();
+  const [form, setForm] = useState({ username: 'admin', password: 'Admin1245', remember: true });
   const [showPassword, setShowPassword] = useState(false);
-  const [forgotOpen, setForgotOpen] = useState(false);
   const [error, setError] = useState('');
+
+  if (!isAuthReady) {
+    return <LoadingSpinner label="Checking account" />;
+  }
 
   if (isAuthenticated) {
     return <Navigate replace to={location.state?.from?.pathname || '/dashboard'} />;
   }
 
-  const handleSubmit = (event) => {
+  const handleSubmit = async (event) => {
     event.preventDefault();
-    const result = login(form);
+    const result = await login(form);
     if (!result.ok) {
       setError(result.message);
       showToast(result.message, 'error');
       return;
     }
     showToast('Welcome back to Barbaza MPC.');
+    navigate(location.state?.from?.pathname || '/dashboard', { replace: true });
   };
 
   return (
@@ -95,7 +101,10 @@ export default function Login() {
                 label="Username"
                 inputClassName="pl-10"
                 value={form.username}
-                onChange={(event) => setForm((current) => ({ ...current, username: event.target.value }))}
+                onChange={(event) => {
+                  setError('');
+                  setForm((current) => ({ ...current, username: event.target.value }));
+                }}
               />
             </div>
             <div className="relative">
@@ -105,7 +114,10 @@ export default function Login() {
                 inputClassName="pl-10 pr-10"
                 type={showPassword ? 'text' : 'password'}
                 value={form.password}
-                onChange={(event) => setForm((current) => ({ ...current, password: event.target.value }))}
+                onChange={(event) => {
+                  setError('');
+                  setForm((current) => ({ ...current, password: event.target.value }));
+                }}
               />
               <button
                 aria-label={showPassword ? 'Hide password' : 'Show password'}
@@ -125,13 +137,13 @@ export default function Login() {
                   checked={form.remember}
                   className="h-4 w-4 rounded border-slate-300 text-teal-700 focus:ring-teal-600"
                   type="checkbox"
-                  onChange={(event) => setForm((current) => ({ ...current, remember: event.target.checked }))}
+                  onChange={(event) => {
+                    setError('');
+                    setForm((current) => ({ ...current, remember: event.target.checked }));
+                  }}
                 />
                 Remember me
               </label>
-              <button className="text-sm font-bold text-teal-700 hover:text-teal-900 dark:text-teal-200" type="button" onClick={() => setForgotOpen(true)}>
-                Forgot password?
-              </button>
             </div>
 
             <Button className="w-full" type="submit">
@@ -142,21 +154,6 @@ export default function Login() {
         </motion.div>
       </section>
 
-      <Modal
-        open={forgotOpen}
-        title="Forgot password"
-        description="Demo recovery UI only. An administrator can reset passwords from User Management."
-        maxWidth="max-w-md"
-        onClose={() => setForgotOpen(false)}
-        footer={
-          <Button onClick={() => setForgotOpen(false)}>
-            Done
-          </Button>
-        }
-      >
-        <FormField label="Username or email" placeholder="Enter account username or email" />
-        <p className="mt-3 text-sm text-slate-500 dark:text-slate-400">For this LocalStorage demo, use the admin account to reset a user password directly.</p>
-      </Modal>
     </div>
   );
 }

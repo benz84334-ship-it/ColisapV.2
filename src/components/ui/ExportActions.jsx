@@ -1,7 +1,7 @@
 import { FiDownload, FiFile, FiPrinter } from 'react-icons/fi';
 import { exportToCSV, exportToExcel, printCurrentView } from '../../utils/exporters.js';
 
-const buttonClass = 'inline-flex h-11 items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 text-sm font-medium text-slate-700 shadow-sm transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:hover:bg-slate-800';
+const buttonClass = 'inline-flex h-11 items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-medium text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:hover:border-slate-600 dark:hover:bg-slate-800';
 
 export default function ExportActions({ rows = [], columns = [], filename = 'export' }) {
   return (

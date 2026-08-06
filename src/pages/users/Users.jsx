@@ -6,6 +6,7 @@ import Button from '../../components/ui/Button.jsx';
 import Modal, { ConfirmDialog } from '../../components/ui/Modal.jsx';
 import FormField from '../../components/forms/FormField.jsx';
 import SearchableTextField from '../../components/forms/SearchableTextField.jsx';
+import PageHeader from '../../components/ui/PageHeader.jsx';
 import { useAuth } from '../../context/AuthContext.jsx';
 import { useData } from '../../context/DataContext.jsx';
 import { useToast } from '../../context/ToastContext.jsx';
@@ -17,7 +18,7 @@ const blankUser = {
   username: '',
   password: '',
   fullName: '',
-  role: ROLES.MANAGER,
+  role: ROLES.STAFF,
   status: 'Active',
   branch: BRANCH_OPTIONS[0],
   email: '',
@@ -63,10 +64,12 @@ export default function Users({ embedded = false }) {
       const branchUsers = data.users.filter((user) => user.branch === branch);
       const admins = branchUsers.filter((user) => user.role === ROLES.ADMIN);
       const managers = branchUsers.filter((user) => user.role === ROLES.MANAGER);
+      const staff = branchUsers.filter((user) => user.role === ROLES.STAFF);
       return {
-        id: branch, branch, admins, managers,
+        id: branch, branch, admins, managers, staff,
         adminNames: admins.map((user) => user.fullName).join(', '),
         managerNames: managers.map((user) => user.fullName).join(', '),
+        staffNames: staff.map((user) => user.fullName).join(', '),
         status: admins.some((user) => user.status === 'Active') || managers.some((user) => user.status === 'Active') ? 'Active' : 'Unassigned',
       };
     });
@@ -92,6 +95,15 @@ export default function Users({ embedded = false }) {
         </div>
       ) : <span className="text-slate-400">Not assigned</span>,
     },
+    {
+      key: 'staffNames',
+      label: 'Staff',
+      render: (row) => row.staff.length ? (
+        <div className="min-w-48 space-y-1">
+          {row.staff.map((user) => <p key={user.id}>{user.fullName}</p>)}
+        </div>
+      ) : <span className="text-slate-400">Not assigned</span>,
+    },
     { key: 'status', label: 'Status', render: (row) => row.status === 'Active' ? <Badge>Active</Badge> : <span className="text-slate-400">Unassigned</span> },
   ], []);
 
@@ -108,29 +120,39 @@ export default function Users({ embedded = false }) {
       { field: 'username', valid: uniqueBy(data.users, 'username', form.username, editing?.id), message: 'Username already exists.' },
       { field: 'fullName', valid: required(form.fullName), message: 'Full name is required.' },
       { field: 'password', valid: editing || required(form.password), message: 'Password is required.' },
+      { field: 'email', valid: editing || required(form.email), message: 'Email is required to create a user.' },
     ]);
     setErrors(nextErrors);
     return !Object.keys(nextErrors).length;
   };
 
-  const saveUser = () => {
+  const saveUser = async () => {
     if (!validate()) {
       showToast('Please correct the highlighted user fields.', 'error');
       return;
     }
-    if (editing) {
-      data.updateUser(editing.id, form, currentUser.username);
-      showToast('User updated.');
-    } else {
-      data.createUser(form, currentUser.username);
-      showToast('User created.');
+    try {
+      if (editing) {
+        await data.updateUser(editing.id, form, currentUser.username);
+        showToast('User updated.');
+      } else {
+        await data.createUser(form, currentUser.username);
+        showToast('User created.');
+      }
+      setModalOpen(false);
+    } catch (error) {
+      console.error(error);
+      showToast(error.message || 'Unable to create user.', 'error');
     }
-    setModalOpen(false);
   };
 
   const resetPassword = (user) => {
-    data.updateUser(user.id, { password: 'reset1234' }, currentUser.username);
-    showToast(`${user.username} password reset to reset1234.`, 'info');
+    data.updateUser(user.id, { password: 'reset1234' }, currentUser.username)
+      .then(() => showToast(`${user.username} password reset to reset1234.`, 'info'))
+      .catch((error) => {
+        console.error(error);
+        showToast(error.message || 'Unable to reset password.', 'error');
+      });
   };
 
   const confirmDelete = () => {
@@ -139,21 +161,28 @@ export default function Users({ embedded = false }) {
       setDeleteTarget(null);
       return;
     }
-    data.deleteUser(deleteTarget.id, currentUser.username);
-    setDeleteTarget(null);
-    showToast('User deleted.');
+    Promise.resolve(data.deleteUser(deleteTarget.id, currentUser.username))
+      .then(() => {
+        setDeleteTarget(null);
+        showToast('User deleted.');
+      })
+      .catch((error) => {
+        console.error(error);
+        showToast(error.message || 'Unable to delete user.', 'error');
+      });
   };
 
   return (
     <div className="space-y-6">
       {embedded ? null : (
-        <div>
-          <h1 className="text-3xl font-black tracking-normal text-slate-950 dark:text-white">User Management</h1>
-          <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">Create users, assign roles, activate accounts, deactivate accounts, and reset demo passwords.</p>
-        </div>
+        <PageHeader
+          eyebrow="Administration"
+          title="User Management"
+          description="Create users, assign Admin, Manager, or Staff roles, activate accounts, deactivate accounts, and reset passwords."
+        />
       )}
 
-      <div className="flex w-fit gap-1 rounded-lg border border-slate-200 bg-white p-1 shadow-sm dark:border-slate-800 dark:bg-slate-950" role="tablist" aria-label="User management views">
+      <div className="flex w-fit gap-1 rounded-2xl border border-slate-200 bg-white p-1 shadow-sm dark:border-slate-800 dark:bg-slate-950" role="tablist" aria-label="User management views">
         <button aria-selected={activeTab === 'users'} className={`inline-flex items-center gap-2 rounded-md px-4 py-2 text-sm font-bold transition ${activeTab === 'users' ? 'bg-teal-700 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800'}`} role="tab" type="button" onClick={() => setActiveTab('users')}>
           <FiUsers /> Users
         </button>
@@ -204,7 +233,7 @@ export default function Users({ embedded = false }) {
       <Modal
         open={modalOpen}
         title={editing ? 'Edit User' : 'Create User'}
-        description="Demo credentials are stored in LocalStorage for this frontend-only build."
+        description="Create a workspace account stored directly in Supabase."
         onClose={() => setModalOpen(false)}
         footer={
           <>
@@ -237,7 +266,7 @@ export default function Users({ embedded = false }) {
       <ConfirmDialog
         open={Boolean(deleteTarget)}
         title="Delete user?"
-        message={`This will remove ${deleteTarget?.username || 'this user'} from demo accounts.`}
+        message={`This will remove ${deleteTarget?.username || 'this user'} from the workspace records.`}
         confirmLabel="Delete"
         onClose={() => setDeleteTarget(null)}
         onConfirm={confirmDelete}
