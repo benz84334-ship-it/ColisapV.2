@@ -343,6 +343,54 @@ export function DataProvider({ children }) {
     });
   }, [persistKey]);
 
+  const addActivity = useCallback(
+    (action, detail, user = 'System') => {
+      updateKey('activityLogs', (logs = []) => [
+        {
+          id: nextId('ACT', logs),
+          action,
+          detail,
+          user,
+          createdAt: new Date().toISOString(),
+        },
+        ...logs,
+      ].slice(0, 250));
+    },
+    [updateKey],
+  );
+
+  const addNotification = useCallback(
+    (title, message, type = 'info', extra = {}) => {
+      updateKey('notifications', (items = []) => [
+        {
+          id: nextId('NOT', items),
+          title,
+          message,
+          type,
+          ...extra,
+          read: false,
+          createdAt: new Date().toISOString(),
+        },
+        ...items,
+      ].slice(0, 100));
+    },
+    [updateKey],
+  );
+
+  const markNotificationRead = useCallback(
+    (id) => {
+      updateKey('notifications', (items = []) => items.map((item) => (item.id === id ? { ...item, read: true } : item)));
+    },
+    [updateKey],
+  );
+
+  const markAllNotificationsRead = useCallback(
+    () => {
+      updateKey('notifications', (items = []) => items.map((item) => (item.read ? item : { ...item, read: true })));
+    },
+    [updateKey],
+  );
+
   useEffect(() => {
     if (isDatabaseLoading) return;
 
@@ -402,54 +450,6 @@ export function DataProvider({ children }) {
       );
     });
   }, [addActivity, addNotification, database.members, isDatabaseLoading, systemDate, updateKey]);
-
-  const addActivity = useCallback(
-    (action, detail, user = 'System') => {
-      updateKey('activityLogs', (logs = []) => [
-        {
-          id: nextId('ACT', logs),
-          action,
-          detail,
-          user,
-          createdAt: new Date().toISOString(),
-        },
-        ...logs,
-      ].slice(0, 250));
-    },
-    [updateKey],
-  );
-
-  const addNotification = useCallback(
-    (title, message, type = 'info', extra = {}) => {
-      updateKey('notifications', (items = []) => [
-        {
-          id: nextId('NOT', items),
-          title,
-          message,
-          type,
-          ...extra,
-          read: false,
-          createdAt: new Date().toISOString(),
-        },
-        ...items,
-      ].slice(0, 100));
-    },
-    [updateKey],
-  );
-
-  const markNotificationRead = useCallback(
-    (id) => {
-      updateKey('notifications', (items = []) => items.map((item) => (item.id === id ? { ...item, read: true } : item)));
-    },
-    [updateKey],
-  );
-
-  const markAllNotificationsRead = useCallback(
-    () => {
-      updateKey('notifications', (items = []) => items.map((item) => (item.read ? item : { ...item, read: true })));
-    },
-    [updateKey],
-  );
 
   const createMember = useCallback(
     (member, user) => {
