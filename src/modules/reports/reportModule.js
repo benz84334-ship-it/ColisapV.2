@@ -1,7 +1,7 @@
 import { addDays, todayIso } from '../../utils/formatters.js';
 
-const reportTypes = ['Monthly Register Member', 'All Member Register', 'Subsequent Process', 'Availment Report'];
-const supportedReportTypes = ['Monthly Register Member', 'All Member Register', 'Subsequent Process', 'Availment Report'];
+const reportTypes = ['Monthly Register Member', 'All Member Register', 'Contribution Report', 'Availment Report'];
+const supportedReportTypes = ['Monthly Register Member', 'All Member Register', 'Contribution Report', 'Availment Report'];
 const calendarMonths = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 export { reportTypes, supportedReportTypes, calendarMonths };
@@ -94,7 +94,7 @@ export function buildReportRows(type, data, range) {
       .sort((a, b) => new Date(b.date) - new Date(a.date));
   }
 
-  if (type === 'Subsequent Process') {
+  if (type === 'Contribution Report') {
     const rows = (data.shareCapitalTransactions || [])
       .map((item) => {
         const matchedMember = (data.members || []).find((member) =>
@@ -122,25 +122,17 @@ export function buildReportRows(type, data, range) {
           remarks: item.remarks || item.encodedBy || '',
         };
       });
-
-    const memberLastDates = new Map();
-    rows.forEach((row) => {
-      const memberKey = String(row.memberId || row.reference || row.member || '').trim();
-      if (!memberKey) return;
-      const rowDate = new Date(row.date);
-      if (Number.isNaN(rowDate.getTime())) return;
-      const currentLatest = memberLastDates.get(memberKey);
-      if (!currentLatest || rowDate > currentLatest) {
-        memberLastDates.set(memberKey, rowDate);
-      }
-    });
-
     return rows
-      .sort((a, b) => new Date(a.date) - new Date(b.date) || String(a.member).localeCompare(String(b.member)))
       .sort((a, b) => {
-        const aDate = memberLastDates.get(String(a.memberId || a.reference || a.member || '').trim()) || new Date(a.date);
-        const bDate = memberLastDates.get(String(b.memberId || b.reference || b.member || '').trim()) || new Date(b.date);
-        return aDate - bDate || new Date(a.date) - new Date(b.date);
+        const aCreated = new Date(a.createdAt || a.date || 0).getTime();
+        const bCreated = new Date(b.createdAt || b.date || 0).getTime();
+        if (bCreated !== aCreated) return bCreated - aCreated;
+
+        const aDate = new Date(a.date || 0).getTime();
+        const bDate = new Date(b.date || 0).getTime();
+        if (bDate !== aDate) return bDate - aDate;
+
+        return String(a.member || '').localeCompare(String(b.member || ''));
       });
   }
 

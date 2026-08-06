@@ -108,6 +108,7 @@ function normalizeAvailments(availments = []) {
 function recomputeMemberShareCapital(members = [], shareCapitalTransactions = []) {
   const transactionTotals = new Map();
   const latestDepositDates = new Map();
+  const latestContributionTimes = new Map();
 
   shareCapitalTransactions.forEach((transaction) => {
     const memberId = String(transaction.memberId || '').trim();
@@ -123,6 +124,11 @@ function recomputeMemberShareCapital(members = [], shareCapitalTransactions = []
     if (!currentLatest || transactionDate > currentLatest) {
       latestDepositDates.set(memberId, transactionDate);
     }
+
+    const contributionTime = String(transaction.contributionTime || transaction.metadata?.contributionTime || '').trim();
+    if (contributionTime) {
+      latestContributionTimes.set(memberId, contributionTime);
+    }
   });
 
   return members.map((member) => {
@@ -134,6 +140,7 @@ function recomputeMemberShareCapital(members = [], shareCapitalTransactions = []
       lastShareCapitalDepositDate: latestDepositDates.has(memberId)
         ? latestDepositDates.get(memberId).toISOString().split('T')[0]
         : member.lastShareCapitalDepositDate,
+      lastContributionTime: latestContributionTimes.get(memberId) || member.lastContributionTime || '',
     };
   });
 }
@@ -662,6 +669,7 @@ const TABLE_SYNCERS = {
       encodedBy: row.encoded_by,
       remarks: row.remarks,
       metadata: row.metadata || {},
+      contributionTime: row.metadata?.contributionTime || '',
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     }),
@@ -1005,6 +1013,19 @@ export async function loadDatabaseFromSupabase() {
     }));
   }
   nextDatabase.members = recomputeMemberShareCapital(nextDatabase.members || [], nextDatabase.shareCapitalTransactions || []);
+  if (Array.isArray(nextDatabase.shareCapitalTransactions) && nextDatabase.shareCapitalTransactions.length) {
+    const latestContributionTimeByMember = new Map();
+    nextDatabase.shareCapitalTransactions.forEach((transaction) => {
+      const memberId = String(transaction.memberId || '').trim();
+      if (!memberId) return;
+      const contributionTime = String(transaction.contributionTime || transaction.metadata?.contributionTime || '').trim();
+      if (contributionTime) latestContributionTimeByMember.set(memberId, contributionTime);
+    });
+    nextDatabase.members = (nextDatabase.members || []).map((member) => ({
+      ...member,
+      lastContributionTime: latestContributionTimeByMember.get(String(member.id || '').trim()) || member.lastContributionTime || '',
+    }));
+  }
   nextDatabase.availments = normalizeAvailments(nextDatabase.availments || []);
   return nextDatabase;
 }

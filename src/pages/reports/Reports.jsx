@@ -89,7 +89,7 @@ export default function Reports() {
         { key: 'beneficiary', label: 'Beneficiary', render: (row) => row.beneficiary || 'Not provided' },
         { key: 'remarks', label: 'Remarks', render: (row) => row.remarks || 'Not provided' },
       ]
-    : filters.type === 'Subsequent Process'
+    : filters.type === 'Contribution Report'
       ? [
         { key: 'reference', label: 'CIFK Number' },
         { key: 'member', label: 'Member Name' },
@@ -170,7 +170,7 @@ export default function Reports() {
             ? 'This report is based on member burial assistance applications, with CIFK number, dates, claim status, beneficiary, amount, and remarks.'
           : filters.type === 'All Member Register'
               ? 'This report is based on all member register records, membership date, branch, and premium.'
-          : filters.type === 'Subsequent Process'
+          : filters.type === 'Contribution Report'
                 ? 'This report is based on contribution records, showing member name, CIFK number, contribution amount, time, and contribution date.'
               : 'This report is based on monthly register member records, membership date, branch, and premium.'}
         </p>
@@ -181,7 +181,7 @@ export default function Reports() {
         {filters.type === 'Availment Report' ? (
           <StatCard accent="green" icon={FiDownload} title="Report Total" value={formatCurrency(totalAmount)} />
         ) : null}
-        {filters.type === 'Subsequent Process' ? (
+        {filters.type === 'Contribution Report' ? (
           <StatCard accent="green" icon={FiDownload} title="Contribution Total" value={formatCurrency(totalAmount)} />
         ) : null}
         <StatCard accent="teal" icon={FiFileText} title="Saved Reports" value={scopedData.reports.length} />
@@ -205,7 +205,7 @@ export default function Reports() {
             </BarChart>
           </ResponsiveContainer>
         </ChartCard>
-      ) : filters.type === 'Subsequent Process' ? (
+      ) : filters.type === 'Contribution Report' ? (
         <ChartCard subtitle="Contribution amount represented in current report rows" title={`${generated?.title || filters.type + ' Report'} Chart`}>
           <ResponsiveContainer height="100%" width="100%">
             <BarChart data={reportChart}>
