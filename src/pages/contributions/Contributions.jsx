@@ -16,7 +16,7 @@ function nextContributionId(members = []) {
 
 export default function Contributions() {
   const data = useData() || {};
-  const { updateMember, addActivity } = data;
+  const { createContribution } = data;
   const { success, error: toastError } = useToast();
   const [memberId, setMemberId] = useState('');
   const [amount, setAmount] = useState('');
@@ -46,25 +46,18 @@ export default function Contributions() {
 
     setSaving(true);
     try {
-      const currentShareCapital = Number(selectedMember.shareCapital || 0);
-      const nextShareCapital = currentShareCapital + contributionAmount;
-      const updatedMember = {
-        ...selectedMember,
-        shareCapital: nextShareCapital,
-        lastShareCapitalDepositDate: contributionDate || todayIso(),
-        lastContributionId: nextContributionId(members),
-        lastContributionAmount: contributionAmount,
-        lastContributionRecordedBy: recordedBy || 'Staff',
-        updatedAt: new Date().toISOString(),
-      };
+      const nextContribution = createContribution?.({
+        id: nextContributionId(members),
+        memberId: selectedMember.id,
+        amount: contributionAmount,
+        contributionDate: contributionDate || todayIso(),
+        recordedBy: recordedBy || 'Staff',
+        transactionType: 'Deposit',
+      }, recordedBy || 'Staff');
 
-      updateMember(selectedMember.id, updatedMember, recordedBy || 'Staff');
-
-      addActivity?.(
-        'Recorded Contribution',
-        `${selectedMember.fullName || 'Member'} contributed ${formatCurrency(contributionAmount)}.`,
-        recordedBy || 'Staff',
-      );
+      if (!nextContribution) {
+        throw new Error('Unable to save contribution.');
+      }
 
       success(`Recorded ${formatCurrency(contributionAmount)} for ${selectedMember.fullName || 'member'}.`);
       setAmount('');

@@ -767,6 +767,62 @@ export function DataProvider({ children }) {
     [addActivity, database.loans, updateKey],
   );
 
+  const createContribution = useCallback(
+    (contribution, user) => {
+      const member = database.members.find((item) => item.id === contribution.memberId || item.memberId === contribution.memberId);
+      if (!member) return null;
+
+      const amount = Number(contribution.amount || 0);
+      if (!Number.isFinite(amount) || amount <= 0) return null;
+
+      const contributionDate = contribution.transactionDate || contribution.contributionDate || todayIso();
+      const recordedBy = contribution.recordedBy || contribution.encodedBy || user || 'Staff';
+      const currentShareCapital = Number(member.shareCapital || 0);
+      const nextShareCapital = currentShareCapital + amount;
+      const transactionId = contribution.id || nextId('CON', database.shareCapitalTransactions || []);
+      const nextContribution = {
+        ...contribution,
+        id: transactionId,
+        memberId: member.id,
+        memberName: member.fullName,
+        transactionDate: contributionDate,
+        transactionType: contribution.transactionType || 'Deposit',
+        amount,
+        runningBalance: Number.isFinite(Number(contribution.runningBalance))
+          ? Number(contribution.runningBalance)
+          : nextShareCapital,
+        referenceNumber: contribution.referenceNumber || transactionId,
+        encodedBy: recordedBy,
+        remarks: contribution.remarks || '',
+        createdAt: new Date().toISOString(),
+      };
+
+      updateKey('shareCapitalTransactions', (items = []) => [nextContribution, ...items]);
+      updateKey('members', (members = []) =>
+        members.map((item) => item.id === member.id
+          ? {
+              ...item,
+              shareCapital: nextShareCapital,
+              lastShareCapitalDepositDate: contributionDate,
+              lastContributionId: transactionId,
+              lastContributionAmount: amount,
+              lastContributionRecordedBy: recordedBy,
+            }
+          : item,
+        ),
+      );
+
+      addActivity(
+        'Recorded Contribution',
+        `${member.fullName || 'Member'} contributed ${amount.toLocaleString('en-PH', { style: 'currency', currency: 'PHP' })}.`,
+        recordedBy,
+      );
+
+      return nextContribution;
+    },
+    [addActivity, database.members, database.shareCapitalTransactions, updateKey],
+  );
+
   const deleteMember = useCallback(
     (id, user) => {
       const member = database.members.find((item) => item.id === id);
@@ -1264,6 +1320,7 @@ export function DataProvider({ children }) {
       createCollection,
       updateCollection,
       deleteCollection,
+      createContribution,
       recordPayment,
       createUser,
       updateUser,
@@ -1285,6 +1342,7 @@ export function DataProvider({ children }) {
       addActivity,
       addNotification,
       createCollection,
+      createContribution,
       createLoan,
       createMember,
       createRequest,

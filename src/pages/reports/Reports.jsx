@@ -89,6 +89,16 @@ export default function Reports() {
         { key: 'beneficiary', label: 'Beneficiary', render: (row) => row.beneficiary || 'Not provided' },
         { key: 'remarks', label: 'Remarks', render: (row) => row.remarks || 'Not provided' },
       ]
+    : filters.type === 'Contribution'
+      ? [
+        { key: 'reference', label: 'CIFK Number' },
+        { key: 'member', label: 'Member Name' },
+        { key: 'amount', label: 'Amount', render: (row) => formatCurrency(row.amount), sortKey: (row) => Number(row.amount) },
+        { key: 'date', label: 'Contribution Date', render: (row) => formatDate(row.date) },
+        { key: 'branch', label: 'Branch', render: (row) => row.branch || 'Not provided' },
+        { key: 'status', label: 'Status', render: (row) => row.status || 'Active' },
+        { key: 'remarks', label: 'Remarks', render: (row) => row.remarks || 'Not provided' },
+      ]
     : [
         { key: 'reference', label: 'Reference' },
         { key: 'member', label: 'Member' },
@@ -157,8 +167,10 @@ export default function Reports() {
         <p className="mt-3 text-sm text-slate-500 dark:text-slate-400">
           {filters.type === 'Availment Report'
             ? 'This report is based on member burial assistance applications, with CIFK number, dates, claim status, beneficiary, amount, and remarks.'
-            : filters.type === 'All Member Register'
+          : filters.type === 'All Member Register'
               ? 'This report is based on all member register records, membership date, branch, and premium.'
+              : filters.type === 'Contribution'
+                ? 'This report is based on contribution records, showing member name, CIFK number, contribution amount, and contribution date.'
               : 'This report is based on monthly register member records, membership date, branch, and premium.'}
         </p>
       </div>
@@ -167,6 +179,9 @@ export default function Reports() {
         <StatCard accent="blue" icon={FiFileText} title="Report Rows" value={reportRows.length} />
         {filters.type === 'Availment Report' ? (
           <StatCard accent="green" icon={FiDownload} title="Report Total" value={formatCurrency(totalAmount)} />
+        ) : null}
+        {filters.type === 'Contribution' ? (
+          <StatCard accent="green" icon={FiDownload} title="Contribution Total" value={formatCurrency(totalAmount)} />
         ) : null}
         <StatCard accent="teal" icon={FiFileText} title="Saved Reports" value={scopedData.reports.length} />
       </div>
@@ -186,6 +201,24 @@ export default function Reports() {
               />
               <Tooltip formatter={(value) => formatCurrency(value)} />
               <Bar dataKey="total" fill="#2563eb" name="Amount" radius={[8, 8, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </ChartCard>
+      ) : filters.type === 'Contribution' ? (
+        <ChartCard subtitle="Contribution amount represented in current report rows" title={`${generated?.title || filters.type + ' Report'} Chart`}>
+          <ResponsiveContainer height="100%" width="100%">
+            <BarChart data={reportChart}>
+              <CartesianGrid strokeDasharray="3 3" vertical={false} />
+              <XAxis dataKey="month" />
+              <YAxis
+                allowDecimals={false}
+                domain={[0, chartUpperBound]}
+                ticks={chartTicks}
+                tickFormatter={(value) => `${Math.round(value / 1000)}K`}
+                width={84}
+              />
+              <Tooltip formatter={(value) => formatCurrency(value)} />
+              <Bar dataKey="total" fill="#0f766e" name="Contribution" radius={[8, 8, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
         </ChartCard>

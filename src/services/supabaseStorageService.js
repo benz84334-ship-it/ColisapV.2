@@ -22,7 +22,7 @@ const LEGACY_AVAILMENT_STATUSES = new Set(['Completed', 'Active', 'Overdue', 'Pa
 
 export const DATA_KEYS = [
   'users', 'members', 'requests', 'loans', 'collections', 'payments', 'reports', 'availments',
-  'settings', 'activityLogs', 'notifications', 'dashboard',
+  'shareCapitalTransactions', 'settings', 'activityLogs', 'notifications', 'dashboard',
 ];
 
 export function loadCachedDatabase() {
@@ -57,6 +57,7 @@ export function freshDatabase() {
     payments: [],
     reports: [],
     availments: [],
+    shareCapitalTransactions: [],
     settings: {},
     activityLogs: [],
     notifications: [],
@@ -603,6 +604,35 @@ const TABLE_SYNCERS = {
       updatedAt: row.updated_at,
     }),
   },
+  shareCapitalTransactions: {
+    table: 'share_capital_transactions',
+    toRow: (item) => ({
+      id: item.id,
+      member_id: item.memberId ?? null,
+      transaction_date: item.transactionDate ?? item.contributionDate ?? null,
+      transaction_type: item.transactionType ?? 'Deposit',
+      amount: item.amount ?? 0,
+      running_balance: item.runningBalance ?? 0,
+      reference_number: item.referenceNumber ?? item.transactionId ?? null,
+      encoded_by: item.encodedBy ?? item.recordedBy ?? null,
+      remarks: item.remarks ?? null,
+      metadata: item.metadata ?? {},
+    }),
+    fromRow: (row) => ({
+      id: row.id,
+      memberId: row.member_id,
+      transactionDate: row.transaction_date,
+      transactionType: row.transaction_type,
+      amount: row.amount,
+      runningBalance: row.running_balance,
+      referenceNumber: row.reference_number,
+      encodedBy: row.encoded_by,
+      remarks: row.remarks,
+      metadata: row.metadata || {},
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    }),
+  },
   reports: {
     table: 'reports',
     toRow: (item) => ({
@@ -920,7 +950,7 @@ export async function approveMemberRequestInSupabase(requestId, approvedBy, appr
 export async function loadDatabaseFromSupabase() {
   assertSupabaseConfigured();
   const nextDatabase = freshDatabase();
-  const tableKeys = ['users', 'members', 'memberBeneficiaries', 'requests', 'loans', 'collections', 'payments', 'reports', 'availments', 'settings', 'activityLogs', 'notifications'];
+  const tableKeys = ['users', 'members', 'memberBeneficiaries', 'requests', 'loans', 'collections', 'payments', 'reports', 'availments', 'shareCapitalTransactions', 'settings', 'activityLogs', 'notifications'];
   const loaded = await Promise.allSettled(tableKeys.map((key) => loadTableSlice(key)));
   tableKeys.forEach((key, index) => {
     const result = loaded[index];

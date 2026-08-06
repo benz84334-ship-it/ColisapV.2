@@ -1,7 +1,7 @@
 import { addDays, todayIso } from '../../utils/formatters.js';
 
-const reportTypes = ['Monthly Register Member', 'All Member Register', 'Availment Report'];
-const supportedReportTypes = ['Monthly Register Member', 'All Member Register', 'Availment Report'];
+const reportTypes = ['Monthly Register Member', 'All Member Register', 'Contribution', 'Availment Report'];
+const supportedReportTypes = ['Monthly Register Member', 'All Member Register', 'Contribution', 'Availment Report'];
 const calendarMonths = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 export { reportTypes, supportedReportTypes, calendarMonths };
@@ -16,7 +16,7 @@ export function rangeFor(type, dateFrom, dateTo) {
 
   if (type === 'Daily') return { from: today, to: today };
   if (type === 'Weekly') return { from: addDays(today, -6), to: today };
-  if (type === 'Monthly' || type === 'Monthly Register Member') return { from: `${month}-01`, to: today };
+  if (type === 'Monthly' || type === 'Monthly Register Member' || type === 'Contribution') return { from: `${month}-01`, to: today };
   if (type === 'Quarterly') return { from: quarterStart, to: quarterEnd };
   if (type === 'Annual') return { from: `${year}-01-01`, to: `${year}-12-31` };
   return { from: dateFrom, to: dateTo };
@@ -90,6 +90,35 @@ export function buildReportRows(type, data, range) {
         amount: Number(member.shareCapital || 0),
         status: member.status,
         remarks: '',
+      }))
+      .sort((a, b) => new Date(b.date) - new Date(a.date));
+  }
+
+  if (type === 'Contribution') {
+    return (data.shareCapitalTransactions || [])
+      .filter((item) => inRange(item.transactionDate || item.createdAt, range))
+      .map((item) => {
+        const matchedMember = (data.members || []).find((member) =>
+          String(member.id || '').trim() === String(item.memberId || '').trim()
+          || String(member.memberId || '').trim() === String(item.memberId || '').trim(),
+        );
+
+        return {
+        id: item.id,
+        memberId: item.memberId,
+        category: 'Contribution',
+        reference: item.referenceNumber || item.id,
+        member: matchedMember?.fullName || item.memberName || '',
+        branch: matchedMember?.branch || '',
+        date: item.transactionDate || item.createdAt,
+        type: item.transactionType || 'Deposit',
+        address: matchedMember?.address || '',
+        barangay: matchedMember?.barangay || '',
+        contact: matchedMember?.contactNumber || '',
+        amount: Number(item.amount || 0),
+        status: 'Completed',
+        remarks: [item.encodedBy ? `Recorded by ${item.encodedBy}` : '', item.remarks || ''].filter(Boolean).join(' | '),
+        };
       }))
       .sort((a, b) => new Date(b.date) - new Date(a.date));
   }
