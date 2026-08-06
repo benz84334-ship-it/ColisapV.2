@@ -113,6 +113,7 @@ export function buildReportRows(type, data, range) {
           branch: matchedMember?.branch || '',
           date: item.transactionDate || item.createdAt,
           time: item.metadata?.contributionTime || item.contributionTime || '',
+          sortTimestamp: item.createdAt || item.transactionDate || '',
           type: item.transactionType || 'Deposit',
           address: matchedMember?.address || '',
           barangay: matchedMember?.barangay || '',

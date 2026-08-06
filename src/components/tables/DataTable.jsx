@@ -32,11 +32,17 @@ export default function DataTable({
   hideHeaderText = false,
   hideTools = false,
   hideExportTools = false,
+  initialSortKey,
+  initialSortDirection = 'asc',
 }) {
   const [query, setQuery] = useState('');
   const [filterValues, setFilterValues] = useState({});
-  const [sort, setSort] = useState({ key: columns[0]?.key, direction: 'asc' });
+  const [sort, setSort] = useState({ key: initialSortKey ?? columns[0]?.key, direction: initialSortDirection });
   const [page, setPage] = useState(1);
+
+  useEffect(() => {
+    setSort({ key: initialSortKey ?? columns[0]?.key, direction: initialSortDirection });
+  }, [columns, initialSortDirection, initialSortKey]);
 
   useEffect(() => {
     setPage(1);

@@ -230,6 +230,8 @@ export default function Reports() {
         data={reportRows}
         hideHeader
         description={`Period: ${generated?.period || `${activeRange.from} to ${activeRange.to}`}`}
+        initialSortDirection={filters.type === 'Contribution Report' ? 'desc' : 'asc'}
+        initialSortKey={filters.type === 'Contribution Report' ? 'sortTimestamp' : undefined}
         filters={[]}
         searchFields={filters.type === 'Availment Report'
           ? ['reference', 'member', 'type', 'availmentCategory', 'beneficiary', 'claimStatus', 'remarks']
