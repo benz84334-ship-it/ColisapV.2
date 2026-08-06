@@ -321,6 +321,29 @@ export function DataProvider({ children }) {
   );
 
   useEffect(() => {
+    const theme = database.settings?.theme || 'light';
+    document.documentElement.classList.toggle('dark', theme === 'dark');
+  }, [database.settings?.theme]);
+
+  const persistKey = useCallback(
+    async (key, nextValue) => {
+      await saveSupabaseKey(key, nextValue);
+    },
+    [],
+  );
+
+  const updateKey = useCallback((key, updater) => {
+    setDatabase((current) => {
+      const nextValue = typeof updater === 'function' ? updater(current[key]) : updater;
+      persistKey(key, nextValue).catch((error) => {
+        console.error(error);
+        setDatabaseError(error.message || 'Unable to sync to Supabase.');
+      });
+      return { ...current, [key]: nextValue };
+    });
+  }, [persistKey]);
+
+  useEffect(() => {
     if (isDatabaseLoading) return;
 
     const nextMembers = (database.members || []).map((member) => ({
@@ -379,29 +402,6 @@ export function DataProvider({ children }) {
       );
     });
   }, [addActivity, addNotification, database.members, isDatabaseLoading, systemDate, updateKey]);
-
-  useEffect(() => {
-    const theme = database.settings?.theme || 'light';
-    document.documentElement.classList.toggle('dark', theme === 'dark');
-  }, [database.settings?.theme]);
-
-  const persistKey = useCallback(
-    async (key, nextValue) => {
-      await saveSupabaseKey(key, nextValue);
-    },
-    [],
-  );
-
-  const updateKey = useCallback((key, updater) => {
-    setDatabase((current) => {
-      const nextValue = typeof updater === 'function' ? updater(current[key]) : updater;
-      persistKey(key, nextValue).catch((error) => {
-        console.error(error);
-        setDatabaseError(error.message || 'Unable to sync to Supabase.');
-      });
-      return { ...current, [key]: nextValue };
-    });
-  }, [persistKey]);
 
   const addActivity = useCallback(
     (action, detail, user = 'System') => {

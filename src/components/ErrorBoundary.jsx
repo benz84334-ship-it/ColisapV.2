@@ -8,6 +8,12 @@ function isChunkLoadError(error) {
     || message.includes('importing a module script failed');
 }
 
+function reloadWithCacheBust() {
+  const url = new URL(window.location.href);
+  url.searchParams.set('__reload', Date.now().toString(36));
+  window.location.replace(url.toString());
+}
+
 export default class ErrorBoundary extends Component {
   constructor(props) {
     super(props);
@@ -24,7 +30,7 @@ export default class ErrorBoundary extends Component {
       const refreshFlag = '__colisap_chunk_retry__';
       if (!window.sessionStorage.getItem(refreshFlag)) {
         window.sessionStorage.setItem(refreshFlag, '1');
-        window.location.reload();
+        reloadWithCacheBust();
       }
     }
   }
@@ -47,7 +53,7 @@ export default class ErrorBoundary extends Component {
             </p>
             {chunkLoadError ? (
               <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
-                This looks like a stale deployment chunk. The app will try to reload once automatically.
+                This looks like a stale deployment chunk. The app will try a fresh cache-busted reload once automatically.
               </p>
             ) : null}
             {this.state.error ? (
