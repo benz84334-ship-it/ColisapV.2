@@ -573,6 +573,8 @@ export default function Members() {
     ],
     [],
   );
+
+  
   const requestColumns = useMemo(
     () => [
       { key: 'cifNumber', label: 'CIFK Number', sortable: false, render: (row) => row.cifNumber || row.memberId || '—' },
@@ -1077,6 +1079,8 @@ export default function Members() {
             ? 'Submit a new cooperative member request with a guided, professional form.'
             : 'Register, review, approve, reject, search, export, and inspect cooperative member profiles.'}
       />
+
+      
 
       {isRequestMemberPage ? (
         <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-950">

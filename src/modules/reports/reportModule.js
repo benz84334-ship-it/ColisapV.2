@@ -1,7 +1,7 @@
 import { addDays, todayIso } from '../../utils/formatters.js';
 
-const reportTypes = ['Monthly Register Member', 'All Member Register', 'Contribution Report', 'Availment Report'];
-const supportedReportTypes = ['Monthly Register Member', 'All Member Register', 'Contribution Report', 'Availment Report'];
+const reportTypes = ['Monthly Register Member', 'All Member Register', 'Availment Report'];
+const supportedReportTypes = ['Monthly Register Member', 'All Member Register', 'Availment Report'];
 const calendarMonths = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 export { reportTypes, supportedReportTypes, calendarMonths };

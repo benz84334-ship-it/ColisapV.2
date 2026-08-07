@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useRef } from 'react';
 import { FiChevronDown, FiChevronLeft, FiChevronRight, FiChevronUp, FiSearch, FiDownload, FiFile, FiPrinter } from 'react-icons/fi';
 import { exportToCSV, exportToExcel, printCurrentView } from '../../utils/exporters.js';
+import parseFile from '../../utils/importers.js';
 import { normalizeText } from '../../utils/formatters.js';
 import Button from '../ui/Button.jsx';
 import EmptyState from '../ui/EmptyState.jsx';
@@ -27,6 +28,7 @@ export default function DataTable({
   searchFields = [],
   searchPlaceholder = 'Search records',
   addAction,
+  onImport = null,
   pageSize = 10,
   hideHeader = false,
   hideHeaderText = false,
@@ -38,6 +40,8 @@ export default function DataTable({
   const [query, setQuery] = useState('');
   const [filterValues, setFilterValues] = useState({});
   const [sort, setSort] = useState({ key: initialSortKey ?? columns[0]?.key, direction: initialSortDirection });
+  const csvInputRef = useRef(null);
+  const excelInputRef = useRef(null);
   const [page, setPage] = useState(1);
 
   useEffect(() => {
@@ -98,13 +102,51 @@ export default function DataTable({
           {hideExportTools ? null : (
             <div className="flex flex-wrap items-center gap-2 no-print">
               {addAction}
-              <button type="button" className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:hover:border-slate-600 dark:hover:bg-slate-800" onClick={() => exportToCSV(sorted, columns, `${title || 'export'}.csv`)}>
+              <input
+                ref={csvInputRef}
+                type="file"
+                accept=".csv,text/csv"
+                className="hidden"
+                onChange={async (e) => {
+                  const file = e.target.files && e.target.files[0];
+                  if (!file) return;
+                  try {
+                    const rows = await parseFile(file);
+                    if (onImport) onImport(rows, file);
+                    else console.log('Imported CSV rows', rows);
+                  } catch (err) {
+                    // eslint-disable-next-line no-console
+                    console.error('Failed to import CSV', err);
+                  }
+                  e.target.value = '';
+                }}
+              />
+              <input
+                ref={excelInputRef}
+                type="file"
+                accept=".xls,.xlsx,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                className="hidden"
+                onChange={async (e) => {
+                  const file = e.target.files && e.target.files[0];
+                  if (!file) return;
+                  try {
+                    const rows = await parseFile(file);
+                    if (onImport) onImport(rows, file);
+                    else console.log('Imported Excel rows', rows);
+                  } catch (err) {
+                    // eslint-disable-next-line no-console
+                    console.error('Failed to import Excel', err);
+                  }
+                  e.target.value = '';
+                }}
+              />
+              <button type="button" className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:hover:border-slate-600 dark:hover:bg-slate-800" onClick={() => csvInputRef.current && csvInputRef.current.click()}>
                 <FiDownload />
-                CSV
+                Import CSV
               </button>
-              <button type="button" className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:hover:border-slate-600 dark:hover:bg-slate-800" onClick={() => exportToExcel(sorted, columns, `${title || 'export'}.xls`)}>
+              <button type="button" className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:hover:border-slate-600 dark:hover:bg-slate-800" onClick={() => excelInputRef.current && excelInputRef.current.click()}>
                 <FiFile />
-                Excel
+                Import Excel
               </button>
               <button type="button" className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:hover:border-slate-600 dark:hover:bg-slate-800" onClick={() => printCurrentView()}>
                 <FiPrinter />
