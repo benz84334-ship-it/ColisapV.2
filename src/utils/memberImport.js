@@ -19,9 +19,24 @@ function normalizeBarangay(value) {
   return /,\s*Antique$/i.test(text) ? text : `${text}, Antique`;
 }
 
+function normalizeKey(value = '') {
+  return String(value ?? '')
+    .replace(/^\uFEFF/, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '')
+    .trim();
+}
+
 function pickValue(row, keys) {
+  if (!row || typeof row !== 'object') return '';
+
+  const lookup = Object.entries(row).reduce((accumulator, [key, value]) => {
+    accumulator[normalizeKey(key)] = value;
+    return accumulator;
+  }, {});
+
   for (const key of keys) {
-    const value = row?.[key];
+    const value = lookup[normalizeKey(key)];
     if (value !== undefined && value !== null && String(value).trim() !== '') return value;
   }
   return '';

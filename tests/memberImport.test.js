@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { buildImportedMemberPayload } from '../src/utils/memberImport.js';
+import { parseFile } from '../src/utils/importers.js';
 
 test('buildImportedMemberPayload maps common spreadsheet columns into a member payload', () => {
   const payload = buildImportedMemberPayload({
@@ -55,4 +56,14 @@ test('buildImportedMemberPayload accepts generic Name headers from simple spread
   assert.equal(payload.fullName, 'Rico Santos');
   assert.equal(payload.address, 'San Jose');
   assert.equal(payload.contactNumber, '09190001111');
+});
+
+test('parseFile strips BOM prefixes from CSV headers', async () => {
+  const csv = '\uFEFFName,Address,Contact\nJuan Dela Cruz,Poblacion,09171234567\n';
+  const file = new File([csv], 'members.csv', { type: 'text/csv' });
+  const rows = await parseFile(file);
+
+  assert.equal(rows[0].Name, 'Juan Dela Cruz');
+  assert.equal(rows[0].Address, 'Poblacion');
+  assert.equal(rows[0].Contact, '09171234567');
 });
