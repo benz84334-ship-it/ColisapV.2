@@ -28,9 +28,9 @@ function pickValue(row, keys) {
 }
 
 export function buildImportedMemberPayload(row = {}) {
-  const firstName = normalizeText(pickValue(row, ['firstName', 'firstname', 'First Name', 'FIRST NAME']));
-  const lastName = normalizeText(pickValue(row, ['lastName', 'lastname', 'Last Name', 'LAST NAME']));
-  const fullName = normalizeText(pickValue(row, ['fullName', 'full_name', 'Full Name', 'FULL NAME']));
+  const firstName = normalizeText(pickValue(row, ['firstName', 'firstname', 'First Name', 'FIRST NAME', 'First name', 'First Name ', 'First']));
+  const lastName = normalizeText(pickValue(row, ['lastName', 'lastname', 'Last Name', 'LAST NAME', 'Last name', 'Last Name ', 'Last']));
+  const fullName = normalizeText(pickValue(row, ['fullName', 'full_name', 'Full Name', 'FULL NAME', 'Member Name', 'Member Name ', 'member name', 'Name', 'name']));
   const memberName = fullName || `${firstName} ${lastName}`.trim();
   const benefitCategory = normalizeBenefitCategory(normalizeText(pickValue(row, ['benefitCategory', 'benefit_category', 'Benefit Category', 'COLISAP Category'])));
   const fallbackCategory = MEMBER_BENEFIT_CATEGORIES[0] || 'Regular';
@@ -45,14 +45,14 @@ export function buildImportedMemberPayload(row = {}) {
     middleName: normalizeText(pickValue(row, ['middleName', 'middlename', 'Middle Name', 'MIDDLE NAME'])),
     suffixName: normalizeText(pickValue(row, ['suffixName', 'suffix', 'Suffix', 'SUFFIX NAME'])),
     fullName: memberName,
-    address: normalizeText(pickValue(row, ['address', 'Address', 'Present Address'])),
-    barangay: normalizeBarangay(normalizeText(pickValue(row, ['barangay', 'Barangay', 'Barangay / Municipality', 'Municipality']))),
-    birthdate: normalizeText(pickValue(row, ['birthdate', 'Birthdate', 'Date of Birth'])),
+    address: normalizeText(pickValue(row, ['address', 'Address', 'Present Address', 'Home Address', 'Home Address ', 'Address ', 'Home Addresss'])),
+    barangay: normalizeBarangay(normalizeText(pickValue(row, ['barangay', 'Barangay', 'Barangay / Municipality', 'Municipality', 'Barangay Municipality', 'Brgy', 'Barangay Name']))),
+    birthdate: normalizeText(pickValue(row, ['birthdate', 'Birthdate', 'Date of Birth', 'Birth Date'])),
     ageYears: '',
     ageMonths: '',
-    gender: normalizeText(pickValue(row, ['gender', 'Gender'])),
+    gender: normalizeText(pickValue(row, ['gender', 'Gender', 'Sex'])),
     civilStatus: normalizeText(pickValue(row, ['civilStatus', 'civil_status', 'Civil Status'])),
-    contactNumber: normalizePhone(pickValue(row, ['contactNumber', 'contact_number', 'Contact Number', 'Contact No.'])),
+    contactNumber: normalizePhone(pickValue(row, ['contactNumber', 'contact_number', 'Contact Number', 'Contact No.', 'Mobile Number', 'Phone Number', 'Contact', 'Contact ', 'Mobile'])),
     occupation: normalizeText(pickValue(row, ['occupation', 'Occupation'])),
     employer: normalizeText(pickValue(row, ['employer', 'Employer'])),
     officeAddress: normalizeText(pickValue(row, ['officeAddress', 'office_address', 'Office Address'])),

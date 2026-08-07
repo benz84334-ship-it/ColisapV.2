@@ -383,6 +383,83 @@ create table if not exists public.users (
 
 alter table public.users drop constraint if exists users_id_fkey;
 
+create or replace function public.normalize_imported_member_payload(payload jsonb)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  normalized jsonb;
+  first_name text;
+  last_name text;
+  full_name text;
+  address_text text;
+  barangay_text text;
+  contact_text text;
+  membership_date_value date;
+  share_capital_value numeric(14,2);
+begin
+  first_name := coalesce(nullif(trim(payload->>'firstName'), ''), nullif(trim(payload->>'first_name'), ''), nullif(trim(payload->>'first_name'), ''), nullif(trim(payload->>'First Name'), ''), nullif(trim(payload->>'First name'), ''));
+  last_name := coalesce(nullif(trim(payload->>'lastName'), ''), nullif(trim(payload->>'last_name'), ''), nullif(trim(payload->>'Last Name'), ''), nullif(trim(payload->>'Last name'), ''));
+  full_name := coalesce(nullif(trim(payload->>'fullName'), ''), nullif(trim(payload->>'full_name'), ''), nullif(trim(payload->>'Member Name'), ''), nullif(trim(payload->>'member name'), ''));
+  address_text := coalesce(nullif(trim(payload->>'address'), ''), nullif(trim(payload->>'Address'), ''), nullif(trim(payload->>'Home Address'), ''));
+  barangay_text := coalesce(nullif(trim(payload->>'barangay'), ''), nullif(trim(payload->>'Barangay'), ''), nullif(trim(payload->>'Barangay / Municipality'), ''), nullif(trim(payload->>'Municipality'), ''));
+  contact_text := coalesce(nullif(trim(payload->>'contactNumber'), ''), nullif(trim(payload->>'contact_number'), ''), nullif(trim(payload->>'Contact Number'), ''), nullif(trim(payload->>'Mobile Number'), ''), nullif(trim(payload->>'Phone Number'), ''));
+  membership_date_value := case
+    when nullif(trim(payload->>'membershipDate'), '') is null then null
+    else (trim(payload->>'membershipDate'))::date
+  end;
+  share_capital_value := case
+    when nullif(trim(payload->>'shareCapital'), '') is null then 0
+    else (trim(payload->>'shareCapital'))::numeric(14,2)
+  end;
+
+  normalized := jsonb_build_object(
+    'member_id', coalesce(nullif(trim(payload->>'memberId'), ''), nullif(trim(payload->>'member_id'), '')),
+    'cif_number', coalesce(nullif(trim(payload->>'cifNumber'), ''), nullif(trim(payload->>'cif_number'), '')),
+    'application_status', coalesce(nullif(trim(payload->>'applicationStatus'), ''), 'New'),
+    'first_name', first_name,
+    'middle_name', coalesce(nullif(trim(payload->>'middleName'), ''), nullif(trim(payload->>'middle_name'), '')),
+    'last_name', last_name,
+    'suffix_name', coalesce(nullif(trim(payload->>'suffixName'), ''), nullif(trim(payload->>'suffix_name'), '')),
+    'full_name', coalesce(full_name, concat_ws(' ', first_name, last_name)),
+    'address', address_text,
+    'barangay', barangay_text,
+    'birthdate', case when nullif(trim(payload->>'birthdate'), '') is null then null else (trim(payload->>'birthdate'))::date end,
+    'age_years', case when nullif(trim(payload->>'ageYears'), '') is null then null else (trim(payload->>'ageYears'))::integer end,
+    'age_months', case when nullif(trim(payload->>'ageMonths'), '') is null then null else (trim(payload->>'ageMonths'))::integer end,
+    'gender', coalesce(nullif(trim(payload->>'gender'), ''), nullif(trim(payload->>'Gender'), '')),
+    'civil_status', coalesce(nullif(trim(payload->>'civilStatus'), ''), nullif(trim(payload->>'civil_status'), '')),
+    'contact_number', contact_text,
+    'occupation', coalesce(nullif(trim(payload->>'occupation'), ''), nullif(trim(payload->>'Occupation'), '')),
+    'employer', coalesce(nullif(trim(payload->>'employer'), ''), nullif(trim(payload->>'Employer'), '')),
+    'office_address', coalesce(nullif(trim(payload->>'officeAddress'), ''), nullif(trim(payload->>'office_address'), '')),
+    'religion', coalesce(nullif(trim(payload->>'religion'), ''), nullif(trim(payload->>'Religion'), '')),
+    'religion_other', coalesce(nullif(trim(payload->>'religionOther'), ''), nullif(trim(payload->>'religion_other'), '')),
+    'dependents', case when nullif(trim(payload->>'dependents'), '') is null then 0 else (trim(payload->>'dependents'))::integer end,
+    'savings_account_no', coalesce(nullif(trim(payload->>'savingsAccountNo'), ''), nullif(trim(payload->>'savings_account_no'), '')),
+    'membership_date', membership_date_value,
+    'signed_date', case when nullif(trim(payload->>'signedDate'), '') is null then null else (trim(payload->>'signedDate'))::date end,
+    'witness_staff', coalesce(nullif(trim(payload->>'witnessStaff'), ''), nullif(trim(payload->>'witness_staff'), '')),
+    'action_taken', coalesce(nullif(trim(payload->>'actionTaken'), ''), 'Pending'),
+    'approving_authority', coalesce(nullif(trim(payload->>'approvingAuthority'), ''), nullif(trim(payload->>'approving_authority'), '')),
+    'approval_date', case when nullif(trim(payload->>'approvalDate'), '') is null then null else (trim(payload->>'approvalDate'))::date end,
+    'findings', coalesce(nullif(trim(payload->>'findings'), ''), nullif(trim(payload->>'Findings'), '')),
+    'status', coalesce(nullif(trim(payload->>'status'), ''), 'Pending'),
+    'branch', coalesce(nullif(trim(payload->>'branch'), ''), 'Main Office'),
+    'share_capital', share_capital_value,
+    'last_share_capital_deposit_date', case when nullif(trim(payload->>'lastShareCapitalDepositDate'), '') is null then null else (trim(payload->>'lastShareCapitalDepositDate'))::date end,
+    'benefit_category', coalesce(nullif(trim(payload->>'benefitCategory'), ''), nullif(trim(payload->>'benefit_category'), ''), nullif(trim(payload->>'Benefit Category'), '')),
+    'beneficiaries', coalesce(payload->'beneficiaries', '[]'::jsonb),
+    'photo', coalesce(nullif(trim(payload->>'photo'), ''), nullif(trim(payload->>'Photo'), '')),
+    'metadata', coalesce(payload->'metadata', '{}'::jsonb)
+  );
+
+  return normalized;
+end;
+$$;
+
 create table if not exists public.members (
   id text primary key,
   member_id text not null unique,

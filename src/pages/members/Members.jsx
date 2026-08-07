@@ -797,7 +797,12 @@ export default function Members() {
   };
 
   const handleImportedMembers = (rows = []) => {
-    const importedMembers = importMembersFromRows(rows).filter((member) => member.fullName || member.firstName || member.lastName);
+    const parsedRows = Array.isArray(rows) ? rows : [];
+    const importedMembers = importMembersFromRows(parsedRows).filter((member, index) => {
+      const sourceRow = parsedRows[index] || {};
+      const hasAnyValue = Object.values(sourceRow).some((value) => String(value ?? '').trim() !== '');
+      return hasAnyValue && (member.fullName || member.firstName || member.lastName || member.address || member.contactNumber);
+    });
     if (!importedMembers.length) {
       showToast('No member rows were found in the selected file.', 'error');
       return;

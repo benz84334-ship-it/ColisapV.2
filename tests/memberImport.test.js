@@ -32,3 +32,27 @@ test('buildImportedMemberPayload splits first and last names when full name is m
   assert.equal(payload.lastName, 'Santos');
   assert.equal(payload.fullName, 'Maria Santos');
 });
+
+test('buildImportedMemberPayload falls back to generic column names and other non-empty values', () => {
+  const payload = buildImportedMemberPayload({
+    'Member Name': 'Ana Cruz',
+    'Home Address': 'Poblacion',
+    'Mobile Number': '09181234567',
+  });
+
+  assert.equal(payload.fullName, 'Ana Cruz');
+  assert.equal(payload.address, 'Poblacion');
+  assert.equal(payload.contactNumber, '09181234567');
+});
+
+test('buildImportedMemberPayload accepts generic Name headers from simple spreadsheets', () => {
+  const payload = buildImportedMemberPayload({
+    Name: 'Rico Santos',
+    Address: 'San Jose',
+    Contact: '09190001111',
+  });
+
+  assert.equal(payload.fullName, 'Rico Santos');
+  assert.equal(payload.address, 'San Jose');
+  assert.equal(payload.contactNumber, '09190001111');
+});
