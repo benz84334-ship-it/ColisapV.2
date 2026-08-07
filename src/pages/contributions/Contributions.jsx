@@ -110,7 +110,7 @@ export default function Contributions() {
   return (
     <div className="space-y-5">
       <PageHeader
-        description="Staff contribution entry and share capital tracking."
+        description="Staff contribution entry and savings tracking."
         title="Contributions"
       />
       <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-950">
@@ -185,7 +185,7 @@ export default function Contributions() {
             </p>
           </div>
           <div className="rounded-2xl bg-slate-50 p-4 dark:bg-slate-900/70">
-            <p className="text-xs uppercase tracking-wider text-slate-400">Current Share Capital</p>
+            <p className="text-xs uppercase tracking-wider text-slate-400">Current Savings</p>
             <p className="mt-1 font-semibold text-slate-950 dark:text-white">
               {selectedMember ? formatCurrency(Number(selectedMember.shareCapital || 0)) : 'PHP 0.00'}
             </p>

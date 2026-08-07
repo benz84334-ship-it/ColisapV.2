@@ -562,7 +562,7 @@ export default function Members() {
       { key: 'barangay', label: 'Barangay / Municipality', className: 'min-w-52 max-w-64', cellClassName: 'min-w-52 max-w-64 whitespace-normal', render: (row) => barangayOnly(row.barangay) },
       {
         key: 'shareCapital',
-        label: 'Share Capital',
+        label: 'Savings',
         className: 'whitespace-nowrap',
         cellClassName: 'whitespace-nowrap',
         render: (row) => formatCurrency(Number(row.shareCapital || 0)),
