@@ -17,6 +17,7 @@ import { formatCurrency, formatDate, formatCifNumber, nextCifNumber, todayIso } 
 import { getComputedMemberStatus } from '../../utils/memberStatus.js';
 import { buildErrorMap, isPhone, required, uniqueBy } from '../../utils/validation.js';
 import { uploadMemberPhoto } from '../../services/supabaseFileStorage.js';
+import { importMembersFromRows } from '../../utils/memberImport.js';
 
 const APPLICATION_STATUS_OPTIONS = ['New', 'Re-application'];
 const CIVIL_STATUS_OPTIONS = ['Single', 'Married', 'Widowed', 'Separated'];
@@ -795,6 +796,20 @@ export default function Members() {
     showToast('Member deleted.');
   };
 
+  const handleImportedMembers = (rows = []) => {
+    const importedMembers = importMembersFromRows(rows).filter((member) => member.fullName || member.firstName || member.lastName);
+    if (!importedMembers.length) {
+      showToast('No member rows were found in the selected file.', 'error');
+      return;
+    }
+
+    importedMembers.forEach((member) => {
+      data.createMember(member, currentUser?.username || 'System');
+    });
+
+    showToast(`Imported ${importedMembers.length} member${importedMembers.length > 1 ? 's' : ''} into management.`);
+  };
+
   const finishRequestReview = (message) => {
     setModalOpen(false);
     setRequestTarget(null);
@@ -1190,6 +1205,7 @@ export default function Members() {
                   Request Member
                 </Button>
               ) : null}
+              onImport={handleImportedMembers}
               actions={(scopedData.members).length ? (row) => (
                 <div className="flex justify-end gap-2 whitespace-nowrap">
                   <Button className="px-3 py-2 text-sm" icon={FiEdit2} variant="secondary" onClick={() => openForm(row)}>
