@@ -22,7 +22,7 @@ const LEGACY_AVAILMENT_STATUSES = new Set(['Completed', 'Active', 'Overdue', 'Pa
 
 export const DATA_KEYS = [
   'users', 'members', 'requests', 'loans', 'collections', 'payments', 'reports', 'availments',
-  'shareCapitalTransactions', 'settings', 'activityLogs', 'notifications', 'dashboard',
+  'shareCapitalTransactions', 'memberStatusHistory', 'settings', 'activityLogs', 'notifications', 'dashboard',
 ];
 
 export function loadCachedDatabase() {
@@ -58,6 +58,7 @@ export function freshDatabase() {
     reports: [],
     availments: [],
     shareCapitalTransactions: [],
+    memberStatusHistory: [],
     settings: {},
     activityLogs: [],
     notifications: [],
@@ -674,6 +675,33 @@ const TABLE_SYNCERS = {
       updatedAt: row.updated_at,
     }),
   },
+  memberStatusHistory: {
+    table: 'member_status_history',
+    toRow: (item) => ({
+      id: item.id,
+      member_id: item.memberId ?? null,
+      member_reference: item.memberReference ?? null,
+      previous_status: item.previousStatus ?? null,
+      new_status: item.newStatus ?? null,
+      last_contribution_date: item.lastContributionDate ?? null,
+      status_change_date: item.statusChangeDate ?? null,
+      reason: item.reason ?? null,
+      metadata: item.metadata ?? {},
+    }),
+    fromRow: (row) => ({
+      id: row.id,
+      memberId: row.member_id,
+      memberReference: row.member_reference,
+      previousStatus: row.previous_status,
+      newStatus: row.new_status,
+      lastContributionDate: row.last_contribution_date,
+      statusChangeDate: row.status_change_date,
+      reason: row.reason,
+      metadata: row.metadata || {},
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    }),
+  },
   reports: {
     table: 'reports',
     toRow: (item) => ({
@@ -991,7 +1019,7 @@ export async function approveMemberRequestInSupabase(requestId, approvedBy, appr
 export async function loadDatabaseFromSupabase() {
   assertSupabaseConfigured();
   const nextDatabase = freshDatabase();
-  const tableKeys = ['users', 'members', 'memberBeneficiaries', 'requests', 'loans', 'collections', 'payments', 'reports', 'availments', 'shareCapitalTransactions', 'settings', 'activityLogs', 'notifications'];
+  const tableKeys = ['users', 'members', 'memberBeneficiaries', 'requests', 'loans', 'collections', 'payments', 'reports', 'availments', 'shareCapitalTransactions', 'memberStatusHistory', 'settings', 'activityLogs', 'notifications'];
   const loaded = await Promise.allSettled(tableKeys.map((key) => loadTableSlice(key)));
   tableKeys.forEach((key, index) => {
     const result = loaded[index];

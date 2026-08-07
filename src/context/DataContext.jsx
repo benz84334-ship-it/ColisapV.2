@@ -7,8 +7,9 @@ import {
   applyComputedMemberStatuses,
   getComputedMemberStatus,
   getLastShareCapitalDepositDate,
+  getMonthsWithoutContribution,
   getMembersApproachingStatusChange,
-  isInDormancyWarningWindow,
+  getStatusChangeReason,
 } from '../utils/memberStatus.js';
 import { sendSms } from '../services/smsService.js';
 import {
@@ -238,6 +239,31 @@ function normalizeBeneficiaries(beneficiaries) {
     }));
 }
 
+function nextStatusHistoryId(items = []) {
+  const max = items.reduce((highest, item) => {
+    const value = Number(String(item.id || '').match(/(\d+)$/)?.[1]);
+    return Number.isNaN(value) ? highest : Math.max(highest, value);
+  }, 0);
+  return `STH-${String(max + 1).padStart(5, '0')}`;
+}
+
+function buildStatusHistoryEntry(member, previousStatus, newStatus, lastContributionDate, statusChangeDate, reason, history = []) {
+  return {
+    id: nextStatusHistoryId(history),
+    memberId: member.id,
+    memberReference: member.cifNumber || member.memberId || member.id,
+    previousStatus,
+    newStatus,
+    lastContributionDate,
+    statusChangeDate,
+    reason,
+    metadata: {
+      memberName: member.fullName || '',
+    },
+    createdAt: new Date().toISOString(),
+  };
+}
+
 export function DataProvider({ children }) {
   const [database, setDatabase] = useState(() => freshDatabase());
   const [isDatabaseLoading, setIsDatabaseLoading] = useState(true);
@@ -394,22 +420,42 @@ export function DataProvider({ children }) {
   useEffect(() => {
     if (isDatabaseLoading) return;
 
-    const nextMembers = (database.members || []).map((member) => ({
-      ...member,
-      status: getComputedMemberStatus(member, database.loans || [], systemDate),
-    }));
-    const hasStatusChanges = nextMembers.some((member, index) => member.status !== (database.members || [])[index]?.status);
-    if (!hasStatusChanges) return;
+    const currentMembers = database.members || [];
+    const currentHistory = database.memberStatusHistory || [];
+    const nextHistory = [];
+    const nextMembers = currentMembers.map((member) => {
+      const computedStatus = getComputedMemberStatus(member, database.loans || [], systemDate);
+      if (computedStatus === member.status) return member;
+
+      const historyEntry = buildStatusHistoryEntry(
+        member,
+        member.status || 'Active',
+        computedStatus,
+        getLastShareCapitalDepositDate(member),
+        systemDate,
+        getStatusChangeReason(computedStatus),
+        [...currentHistory, ...nextHistory],
+      );
+      nextHistory.push(historyEntry);
+      return {
+        ...member,
+        status: computedStatus,
+      };
+    });
+
+    if (!nextHistory.length) return;
 
     updateKey('members', nextMembers);
-  }, [database.members, database.loans, isDatabaseLoading, systemDate, updateKey]);
+    updateKey('memberStatusHistory', [...nextHistory, ...currentHistory]);
+  }, [database.loans, database.memberStatusHistory, database.members, isDatabaseLoading, systemDate, updateKey]);
 
   useEffect(() => {
     if (isDatabaseLoading) return;
 
     const members = database.members || [];
     const warningMembers = members.filter((member) => {
-      if (!isInDormancyWarningWindow(member, systemDate)) return false;
+      const monthsWithoutContribution = getMonthsWithoutContribution(member, systemDate);
+      if (monthsWithoutContribution !== 2) return false;
       const warningKey = getLastShareCapitalDepositDate(member);
       return member.lastDormancyWarningNotifiedFor !== warningKey;
     });
@@ -812,12 +858,11 @@ export function DataProvider({ children }) {
         members.map((item) => {
           if (item.id !== id) return item;
 
-          const shareCapitalIncreased = Number(member.shareCapital || 0) > Number(item.shareCapital || 0);
           const nextMember = {
             ...item,
             ...member,
             beneficiaries: nextBeneficiaries,
-            lastShareCapitalDepositDate: member.lastShareCapitalDepositDate || (shareCapitalIncreased ? todayIso() : getLastShareCapitalDepositDate(item)),
+            lastShareCapitalDepositDate: member.lastShareCapitalDepositDate || getLastShareCapitalDepositDate(item),
             photo: member.photo || item.photo || avatarForName(member.fullName),
           };
 
@@ -878,17 +923,43 @@ export function DataProvider({ children }) {
             lastContributionAmount: amount,
             lastContributionRecordedBy: recordedBy,
             lastContributionTime: contributionTime,
+            status: 'Active',
           }
         : item,
       );
+      const currentHistory = database.memberStatusHistory || [];
+      const currentStatus = member.status || getComputedMemberStatus(member, database.loans || [], contributionDate);
+      const nextStatus = 'Active';
+      const nextHistory = currentStatus === nextStatus
+        ? currentHistory
+        : [
+            buildStatusHistoryEntry(
+              member,
+              currentStatus,
+              nextStatus,
+              contributionDate,
+              contributionDate,
+              'Valid contribution recorded; member restored to active standing.',
+              currentHistory,
+            ),
+            ...currentHistory,
+          ];
 
       updateKey('shareCapitalTransactions', nextTransactions);
       updateKey('members', nextMembers);
+      if (nextHistory !== currentHistory) {
+        updateKey('memberStatusHistory', nextHistory);
+      }
 
       await saveSupabaseKey('shareCapitalTransactions', nextContribution);
       await saveSupabaseKey('members', [nextMembers.find((item) => item.id === member.id)]).catch((memberSaveError) => {
         console.error(memberSaveError);
       });
+      if (nextHistory !== currentHistory) {
+        await saveSupabaseKey('memberStatusHistory', nextHistory).catch((historyError) => {
+          console.error(historyError);
+        });
+      }
 
       addActivity(
         'Recorded Contribution',

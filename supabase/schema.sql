@@ -534,6 +534,20 @@ create table if not exists public.share_capital_transactions (
   updated_at timestamptz not null default now()
 );
 
+create table if not exists public.member_status_history (
+  id text primary key,
+  member_id text not null references public.members(id) on delete cascade,
+  member_reference text,
+  previous_status text not null,
+  new_status text not null,
+  last_contribution_date date,
+  status_change_date date not null default current_date,
+  reason text not null,
+  metadata jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
 create table if not exists public.loans (
   id text primary key,
   loan_number text not null unique,
@@ -816,6 +830,7 @@ alter table public.members enable row level security;
 alter table public.member_beneficiaries enable row level security;
 alter table public.requests enable row level security;
 alter table public.share_capital_transactions enable row level security;
+alter table public.member_status_history enable row level security;
 alter table public.loans enable row level security;
 alter table public.collections enable row level security;
 alter table public.payments enable row level security;
@@ -853,6 +868,15 @@ create policy "public insert share capital transactions" on public.share_capital
 create policy "public update share capital transactions" on public.share_capital_transactions for update to authenticated, anon using (true) with check (true);
 create policy "public delete share capital transactions" on public.share_capital_transactions for delete to authenticated, anon using (true);
 
+drop policy if exists "public read member status history" on public.member_status_history;
+drop policy if exists "public insert member status history" on public.member_status_history;
+drop policy if exists "public update member status history" on public.member_status_history;
+drop policy if exists "public delete member status history" on public.member_status_history;
+create policy "public read member status history" on public.member_status_history for select to authenticated, anon using (true);
+create policy "public insert member status history" on public.member_status_history for insert to authenticated, anon with check (true);
+create policy "public update member status history" on public.member_status_history for update to authenticated, anon using (true) with check (true);
+create policy "public delete member status history" on public.member_status_history for delete to authenticated, anon using (true);
+
 drop policy if exists "public read app_data" on public.app_data;
 drop policy if exists "public insert app_data" on public.app_data;
 drop policy if exists "public update app_data" on public.app_data;
@@ -872,6 +896,8 @@ drop trigger if exists set_updated_at_requests on public.requests;
 create trigger set_updated_at_requests before update on public.requests for each row execute function public.set_updated_at();
 drop trigger if exists set_updated_at_share_capital_transactions on public.share_capital_transactions;
 create trigger set_updated_at_share_capital_transactions before update on public.share_capital_transactions for each row execute function public.set_updated_at();
+drop trigger if exists set_updated_at_member_status_history on public.member_status_history;
+create trigger set_updated_at_member_status_history before update on public.member_status_history for each row execute function public.set_updated_at();
 drop trigger if exists sync_member_share_capital_from_transactions_on_insert on public.share_capital_transactions;
 create trigger sync_member_share_capital_from_transactions_on_insert
 after insert on public.share_capital_transactions

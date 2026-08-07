@@ -24,6 +24,7 @@ export function normalizeBranchName(branch = '') {
 export const STORAGE_KEYS = {
   users: 'users',
   members: 'members',
+  memberStatusHistory: 'memberStatusHistory',
   loans: 'loans',
   collections: 'collections',
   payments: 'payments',
