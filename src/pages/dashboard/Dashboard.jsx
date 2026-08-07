@@ -6,7 +6,6 @@ import StatCard from '../../components/cards/StatCard.jsx';
 import ChartCard from '../../components/charts/ChartCard.jsx';
 import Badge from '../../components/ui/Badge.jsx';
 import Button from '../../components/ui/Button.jsx';
-import ExportActions from '../../components/ui/ExportActions.jsx';
 import Modal from '../../components/ui/Modal.jsx';
 import PageHeader from '../../components/ui/PageHeader.jsx';
 import { useAuth } from '../../context/AuthContext.jsx';
@@ -48,13 +47,6 @@ export default function Dashboard() {
   const dormantMembers = scopedData.members.filter((member) => member.status === 'Dormant').length;
   const fortyKMembers = scopedData.members.filter((member) => normalizeBenefitCategory(member.benefitCategory) === MEMBER_BENEFIT_CATEGORIES[0]);
   const sixtyKMembers = scopedData.members.filter((member) => normalizeBenefitCategory(member.benefitCategory) === MEMBER_BENEFIT_CATEGORIES[1]);
-  const dashboardExportColumns = [
-    { key: 'memberId', label: 'CIFK Number' },
-    { key: 'fullName', label: 'Member' },
-    { key: 'barangay', label: 'Barangay / Municipality' },
-    { key: 'membershipDate', label: 'Membership Date' },
-    { key: 'status', label: 'Status' },
-  ];
   const memberStatusByMonth = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'].map((month) => ({
     month,
     Active: month === 'Jul' ? activeMembers : 0,
@@ -126,7 +118,6 @@ export default function Dashboard() {
         description="Summary of membership status, released packages, collections, and accounts requiring attention."
         actions={(
           <>
-            <ExportActions rows={scopedData.members} columns={dashboardExportColumns} filename={`dashboard-${todayIso()}`} />
             {isAdmin || isManager ? (
               <Link to="/reports">
                 <Button icon={FiFileText} variant="secondary">
