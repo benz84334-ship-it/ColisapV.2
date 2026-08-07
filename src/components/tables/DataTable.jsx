@@ -89,6 +89,32 @@ export default function DataTable({
     }));
   };
 
+  const handleImportSelection = async (event, type) => {
+    const file = event.target.files && event.target.files[0];
+    if (!file) return;
+
+    const confirmed = typeof window !== 'undefined'
+      ? window.confirm(`Import ${file.name} into the current view?`)
+      : true;
+
+    if (!confirmed) {
+      event.target.value = '';
+      return;
+    }
+
+    try {
+      const rows = await parseFile(file);
+      if (onImport) onImport(rows, file);
+      else if (type === 'csv') console.log('Imported CSV rows', rows);
+      else console.log('Imported Excel rows', rows);
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error(`Failed to import ${type === 'csv' ? 'CSV' : 'Excel'}`, err);
+    }
+
+    event.target.value = '';
+  };
+
   return (
     <section className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-950">
       {!hideHeader ? (
@@ -107,38 +133,14 @@ export default function DataTable({
                 type="file"
                 accept=".csv,text/csv"
                 className="hidden"
-                onChange={async (e) => {
-                  const file = e.target.files && e.target.files[0];
-                  if (!file) return;
-                  try {
-                    const rows = await parseFile(file);
-                    if (onImport) onImport(rows, file);
-                    else console.log('Imported CSV rows', rows);
-                  } catch (err) {
-                    // eslint-disable-next-line no-console
-                    console.error('Failed to import CSV', err);
-                  }
-                  e.target.value = '';
-                }}
+                onChange={(e) => handleImportSelection(e, 'csv')}
               />
               <input
                 ref={excelInputRef}
                 type="file"
                 accept=".xls,.xlsx,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 className="hidden"
-                onChange={async (e) => {
-                  const file = e.target.files && e.target.files[0];
-                  if (!file) return;
-                  try {
-                    const rows = await parseFile(file);
-                    if (onImport) onImport(rows, file);
-                    else console.log('Imported Excel rows', rows);
-                  } catch (err) {
-                    // eslint-disable-next-line no-console
-                    console.error('Failed to import Excel', err);
-                  }
-                  e.target.value = '';
-                }}
+                onChange={(e) => handleImportSelection(e, 'excel')}
               />
               <button type="button" className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:hover:border-slate-600 dark:hover:bg-slate-800" onClick={() => csvInputRef.current && csvInputRef.current.click()}>
                 <FiDownload />
