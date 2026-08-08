@@ -511,20 +511,20 @@ export function DataProvider({ children }) {
 
   const createMember = useCallback(
     (member, user) => {
-      const currentMembers = database.members || [];
-      const generatedMemberRowId = nextMemberRowId(currentMembers);
-      const nextMemberIdCode = isDuplicateMemberId(currentMembers, member.memberId)
-        ? nextMemberId(currentMembers, member.membershipDate || todayIso())
-        : (member.memberId || nextMemberId(currentMembers, member.membershipDate || todayIso()));
-      const nextCifCode = isDuplicateCifNumber(currentMembers, member.cifNumber)
-        ? nextCifNumber(currentMembers, member.membershipDate || todayIso())
-        : (member.cifNumber || nextCifNumber(currentMembers, member.membershipDate || todayIso()));
-      const nextBeneficiaries = normalizeBeneficiaries(member.beneficiaries).map((beneficiary, index) => ({
-        ...beneficiary,
-        memberId: generatedMemberRowId,
-        sortOrder: index,
-      }));
       updateKey('members', (members = []) => {
+        const existingMembers = Array.isArray(members) ? members : [];
+        const generatedMemberRowId = nextMemberRowId(existingMembers);
+        const nextMemberIdCode = isDuplicateMemberId(existingMembers, member.memberId)
+          ? nextMemberId(existingMembers, member.membershipDate || todayIso())
+          : (member.memberId || nextMemberId(existingMembers, member.membershipDate || todayIso()));
+        const nextCifCode = isDuplicateCifNumber(existingMembers, member.cifNumber)
+          ? nextCifNumber(existingMembers, member.membershipDate || todayIso())
+          : (member.cifNumber || nextCifNumber(existingMembers, member.membershipDate || todayIso()));
+        const nextBeneficiaries = normalizeBeneficiaries(member.beneficiaries).map((beneficiary, index) => ({
+          ...beneficiary,
+          memberId: generatedMemberRowId,
+          sortOrder: index,
+        }));
         const nextMember = {
           ...member,
           branch: member.branch || getActorBranch(database.users, user),
@@ -539,14 +539,56 @@ export function DataProvider({ children }) {
 
         return [{ ...nextMember, status: getComputedMemberStatus(nextMember, database.loans) }, ...members];
       });
-      saveSupabaseKey('memberBeneficiaries', nextBeneficiaries).catch((error) => {
-        console.error(error);
-        setDatabaseError(error.message || 'Unable to sync beneficiaries to Supabase. Changes saved locally.');
-      });
       addActivity('Added Member', `${member.fullName} was added to member records.`, user);
       addNotification('New member', `${member.fullName} is now registered.`, 'success');
     },
-    [addActivity, addNotification, database.loans, updateKey],
+    [addActivity, addNotification, database.loans, database.users, updateKey],
+  );
+
+  const createMembersBatch = useCallback(
+    (membersToCreate = [], user) => {
+      const incoming = Array.isArray(membersToCreate) ? membersToCreate.filter(Boolean) : [];
+      if (!incoming.length) return;
+
+      updateKey('members', (members = []) => {
+        const existingMembers = Array.isArray(members) ? members : [];
+        const nextMembers = [...existingMembers];
+
+        incoming.forEach((member) => {
+          const generatedMemberRowId = nextMemberRowId(nextMembers);
+          const nextMemberIdCode = isDuplicateMemberId(nextMembers, member.memberId)
+            ? nextMemberId(nextMembers, member.membershipDate || todayIso())
+            : (member.memberId || nextMemberId(nextMembers, member.membershipDate || todayIso()));
+          const nextCifCode = isDuplicateCifNumber(nextMembers, member.cifNumber)
+            ? nextCifNumber(nextMembers, member.membershipDate || todayIso())
+            : (member.cifNumber || nextCifNumber(nextMembers, member.membershipDate || todayIso()));
+          const nextBeneficiaries = normalizeBeneficiaries(member.beneficiaries).map((beneficiary, index) => ({
+            ...beneficiary,
+            memberId: generatedMemberRowId,
+            sortOrder: index,
+          }));
+          const nextMember = {
+            ...member,
+            branch: member.branch || getActorBranch(database.users, user),
+            id: generatedMemberRowId,
+            memberId: nextMemberIdCode,
+            cifNumber: nextCifCode,
+            photo: member.photo || avatarForName(member.fullName),
+            lastShareCapitalDepositDate: member.lastShareCapitalDepositDate || todayIso(),
+            beneficiaries: nextBeneficiaries,
+            createdAt: new Date().toISOString(),
+          };
+
+          nextMembers.unshift({ ...nextMember, status: getComputedMemberStatus(nextMember, database.loans) });
+        });
+
+        return nextMembers;
+      });
+
+      addActivity('Imported Members', `${incoming.length} members were imported into member records.`, user);
+      addNotification('Members imported', `${incoming.length} members are now registered.`, 'success');
+    },
+    [addActivity, addNotification, database.loans, database.users, updateKey],
   );
 
   const nextRequestNumber = useCallback((requests = []) => {
@@ -1473,6 +1515,7 @@ export function DataProvider({ children }) {
       markNotificationRead,
       markAllNotificationsRead,
       createMember,
+      createMembersBatch,
       createRequest,
       updateMember,
       updateRequest,
@@ -1511,6 +1554,7 @@ export function DataProvider({ children }) {
       createContribution,
       createLoan,
       createMember,
+      createMembersBatch,
       createRequest,
       createReport,
       createAvailment,

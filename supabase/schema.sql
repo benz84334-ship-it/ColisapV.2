@@ -394,6 +394,8 @@ declare
   first_name text;
   last_name text;
   full_name text;
+  sheet_member_name text;
+  source_identity text;
   middle_name text;
   address_text text;
   barangay_text text;
@@ -404,13 +406,60 @@ declare
   approval_date_value date;
   share_capital_value numeric(14,2);
 begin
-  first_name := coalesce(nullif(trim(payload->>'firstName'), ''), nullif(trim(payload->>'first_name'), ''), nullif(trim(payload->>'first_name'), ''), nullif(trim(payload->>'First Name'), ''), nullif(trim(payload->>'First name'), ''));
+  source_identity := coalesce(
+    nullif(trim(payload->>'id'), ''),
+    nullif(trim(payload->>'rowId'), ''),
+    nullif(trim(payload->>'row_id'), ''),
+    nullif(trim(payload->>'__rowNumber'), ''),
+    nullif(trim(payload->>'__sourceRow'), ''),
+    nullif(trim(payload->>'CIFK Number'), ''),
+    nullif(trim(payload->>'CIFK No.'), ''),
+    nullif(trim(payload->>'CIFK No'), ''),
+    nullif(trim(payload->>'CIFK'), ''),
+    nullif(trim(payload->>'memberId'), ''),
+    nullif(trim(payload->>'member_id'), ''),
+    nullif(trim(payload->>'fullName'), ''),
+    nullif(trim(payload->>'full_name'), ''),
+    nullif(trim(payload->>'Member Name'), ''),
+    nullif(trim(payload->>'Member'), ''),
+    nullif(trim(payload->>'Name'), ''),
+    nullif(trim(payload->>'name'), '')
+  );
+  sheet_member_name := coalesce(
+    nullif(trim(payload->>'fullName'), ''),
+    nullif(trim(payload->>'full_name'), ''),
+    nullif(trim(payload->>'Member Name'), ''),
+    nullif(trim(payload->>'member name'), ''),
+    nullif(trim(payload->>'Member'), ''),
+    nullif(trim(payload->>'Name'), ''),
+    nullif(trim(payload->>'name'), '')
+  );
+  first_name := coalesce(nullif(trim(payload->>'firstName'), ''), nullif(trim(payload->>'first_name'), ''), nullif(trim(payload->>'First Name'), ''), nullif(trim(payload->>'First name'), ''));
   last_name := coalesce(nullif(trim(payload->>'lastName'), ''), nullif(trim(payload->>'last_name'), ''), nullif(trim(payload->>'Last Name'), ''), nullif(trim(payload->>'Last name'), ''));
-  full_name := coalesce(nullif(trim(payload->>'fullName'), ''), nullif(trim(payload->>'full_name'), ''), nullif(trim(payload->>'Member Name'), ''), nullif(trim(payload->>'member name'), ''));
+  full_name := coalesce(sheet_member_name, nullif(trim(payload->>'full_name'), ''));
   middle_name := coalesce(nullif(trim(payload->>'middleName'), ''), nullif(trim(payload->>'middle_name'), ''), nullif(trim(payload->>'Middle Name'), ''), nullif(trim(payload->>'Middle name'), ''));
   address_text := coalesce(nullif(trim(payload->>'address'), ''), nullif(trim(payload->>'Address'), ''), nullif(trim(payload->>'Home Address'), ''));
-  barangay_text := coalesce(nullif(trim(payload->>'barangay'), ''), nullif(trim(payload->>'Barangay'), ''), nullif(trim(payload->>'Barangay / Municipality'), ''), nullif(trim(payload->>'Municipality'), ''));
-  contact_text := coalesce(nullif(trim(payload->>'contactNumber'), ''), nullif(trim(payload->>'contact_number'), ''), nullif(trim(payload->>'Contact Number'), ''), nullif(trim(payload->>'Mobile Number'), ''), nullif(trim(payload->>'Phone Number'), ''));
+  barangay_text := coalesce(
+    nullif(trim(payload->>'barangay'), ''),
+    nullif(trim(payload->>'Barangay'), ''),
+    nullif(trim(payload->>'Barangay / Municipality'), ''),
+    nullif(trim(payload->>'Barangay / Municipality '), ''),
+    nullif(trim(payload->>'Municipality'), ''),
+    nullif(trim(payload->>'Municipality / Barangay'), ''),
+    nullif(trim(payload->>'Brgy / Municipality'), '')
+  );
+  contact_text := coalesce(
+    nullif(trim(payload->>'contactNumber'), ''),
+    nullif(trim(payload->>'contact_number'), ''),
+    nullif(trim(payload->>'Contact'), ''),
+    nullif(trim(payload->>'Contact Number'), ''),
+    nullif(trim(payload->>'Contact No.'), ''),
+    nullif(trim(payload->>'Contact No'), ''),
+    nullif(trim(payload->>'Mobile Number'), ''),
+    nullif(trim(payload->>'Mobile No.'), ''),
+    nullif(trim(payload->>'Phone Number'), ''),
+    nullif(trim(payload->>'Phone No.'), '')
+  );
   last_contribution_date_value := case
     when nullif(trim(payload->>'lastContributionDate'), '') is null then
       case
@@ -435,13 +484,33 @@ begin
     else (trim(payload->>'approvalDate'))::date
   end;
   share_capital_value := case
-    when nullif(trim(payload->>'shareCapital'), '') is null then 0
-    else (trim(payload->>'shareCapital'))::numeric(14,2)
+    when nullif(trim(coalesce(payload->>'shareCapital', payload->>'Savings', payload->>'Saving', payload->>'Savings Amount', payload->>'Amount Saved', payload->>'share_capital')), '') is null then 0
+    else (trim(coalesce(payload->>'shareCapital', payload->>'Savings', payload->>'Saving', payload->>'Savings Amount', payload->>'Amount Saved', payload->>'share_capital')))::numeric(14,2)
   end;
 
   normalized := jsonb_build_object(
-    'member_id', coalesce(nullif(trim(payload->>'memberId'), ''), nullif(trim(payload->>'member_id'), '')),
-    'cif_number', coalesce(nullif(trim(payload->>'cifNumber'), ''), nullif(trim(payload->>'cif_number'), '')),
+    'member_id', coalesce(
+      nullif(trim(payload->>'memberId'), ''),
+      nullif(trim(payload->>'member_id'), ''),
+      nullif(trim(payload->>'cifNumber'), ''),
+      nullif(trim(payload->>'cif_number'), ''),
+      nullif(trim(payload->>'CIFK Number'), ''),
+      nullif(trim(payload->>'CIFK No.'), ''),
+      nullif(trim(payload->>'CIFK No'), ''),
+      nullif(trim(payload->>'CIFK'), ''),
+      case when coalesce(source_identity, '') <> '' then 'M-' || left(md5(source_identity), 12) end
+    ),
+    'cif_number', coalesce(
+      nullif(trim(payload->>'cifNumber'), ''),
+      nullif(trim(payload->>'cif_number'), ''),
+      nullif(trim(payload->>'CIFK Number'), ''),
+      nullif(trim(payload->>'CIFK No.'), ''),
+      nullif(trim(payload->>'CIFK No'), ''),
+      nullif(trim(payload->>'CIFK'), ''),
+      nullif(trim(payload->>'memberId'), ''),
+      nullif(trim(payload->>'member_id'), ''),
+      case when coalesce(source_identity, '') <> '' then 'CIFK-' || to_char(current_date, 'YYYY') || '-' || upper(right(md5(source_identity), 5)) end
+    ),
     'application_status', coalesce(nullif(trim(payload->>'applicationStatus'), ''), 'New'),
     'first_name', first_name,
     'middle_name', middle_name,
@@ -473,7 +542,10 @@ begin
     'status', coalesce(nullif(trim(payload->>'status'), ''), 'Pending'),
     'branch', coalesce(nullif(trim(payload->>'branch'), ''), 'Main Office'),
     'share_capital', share_capital_value,
-    'last_share_capital_deposit_date', case when nullif(trim(payload->>'lastShareCapitalDepositDate'), '') is null then null else (trim(payload->>'lastShareCapitalDepositDate'))::date end,
+    'last_share_capital_deposit_date', case
+      when nullif(trim(coalesce(payload->>'lastShareCapitalDepositDate', payload->>'Last Share Capital Deposit Date', payload->>'Last Contribution Date', payload->>'lastContributionDate', payload->>'Membership Date', payload->>'membershipDate')), '') is null then null
+      else (trim(coalesce(payload->>'lastShareCapitalDepositDate', payload->>'Last Share Capital Deposit Date', payload->>'Last Contribution Date', payload->>'lastContributionDate', payload->>'Membership Date', payload->>'membershipDate')))::date
+    end,
     'benefit_category', coalesce(nullif(trim(payload->>'benefitCategory'), ''), nullif(trim(payload->>'benefit_category'), ''), nullif(trim(payload->>'Benefit Category'), '')),
     'beneficiaries', coalesce(payload->'beneficiaries', '[]'::jsonb),
     'photo', coalesce(nullif(trim(payload->>'photo'), ''), nullif(trim(payload->>'Photo'), '')),

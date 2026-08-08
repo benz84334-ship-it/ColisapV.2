@@ -178,6 +178,7 @@ function mapImportedMemberRow(row = {}, generatedCifNumber = '') {
   const firstName = normalizeImportText(pickImportValue(row, ['firstName', 'First Name', 'First name', 'Firstname', 'firstname', 'first_name', 'first'])) || splitFullName(fullName).firstName;
   const middleName = normalizeImportText(pickImportValue(row, ['middleName', 'Middle Name', 'Middle name', 'Middlename', 'middlename', 'middle_name', 'middle'])) || splitFullName(fullName).middleName;
   const lastName = normalizeImportText(pickImportValue(row, ['lastName', 'Last Name', 'Last name', 'Lastname', 'lastname', 'last_name', 'last'])) || splitFullName(fullName).lastName;
+  const importName = fullName || [firstName, middleName, lastName].filter(Boolean).join(' ').trim();
   return {
     memberId: sheetCifNumber || generatedCifNumber || '',
     cifNumber: sheetCifNumber || generatedCifNumber || '',
@@ -186,7 +187,7 @@ function mapImportedMemberRow(row = {}, generatedCifNumber = '') {
     firstName,
     middleName,
     lastName,
-    fullName,
+    fullName: importName || 'Imported Member',
     address: normalizeImportText(pickImportValue(row, ['address', 'Address', 'Present Address', 'Home Address', 'homeaddress'])),
     barangay: normalizeImportText(pickImportValue(row, ['barangay', 'Barangay', 'Municipality', 'Barangay / Municipality', 'brgy'])),
     birthdate: normalizeImportedDate(pickImportValue(row, ['birthdate', 'Date of Birth', 'Birth Date', 'dateofbirth', 'DOB', 'Date of birth'])) || '',
@@ -954,19 +955,42 @@ export default function Members() {
 
   const handleImportedMembers = (rows = []) => {
     const parsedRows = Array.isArray(rows) ? rows : [];
-  const importedMembers = parsedRows
-    .filter((row) => Object.values(row || {}).some((value) => String(value ?? '').trim() !== ''))
-    .map((row, index) => {
-      const rowSpecificFallback = `CIFK-${String(new Date().getFullYear())}-${String((row.__rowNumber || index + 1)).padStart(5, '0')}`;
-      const member = mapImportedMemberRow(row, rowSpecificFallback);
-      const fallbackName = [member.firstName, member.middleName, member.lastName].filter(Boolean).join(' ').trim()
-        || normalizeImportText(pickImportValue(row, ['name', 'fullName', 'Full Name', 'Member Name']))
-        || `Imported Member ${index + 1}`;
+    const seenImportIds = new Set();
+    const seenImportCifs = new Set();
+    const importedMembers = parsedRows
+      .map((row, index) => ({ row: { ...(row || {}) }, index }))
+      .filter(({ row }) => Object.entries(row).some(([key, value]) => !key.startsWith('__') && String(value ?? '').trim() !== ''))
+      .map(({ row, index }) => {
+        const rowNumber = Number(row.__rowNumber || row.__sourceRow || index + 1);
+        const rowSpecificFallback = `CIFK-${String(new Date().getFullYear())}-${String(rowNumber).padStart(5, '0')}`;
+        const member = mapImportedMemberRow(row, rowSpecificFallback);
+        const nextMemberId = member.memberId && !seenImportIds.has(member.memberId)
+          ? member.memberId
+          : rowSpecificFallback;
+        const nextCifNumber = member.cifNumber && !seenImportCifs.has(member.cifNumber)
+          ? member.cifNumber
+          : rowSpecificFallback;
+        seenImportIds.add(nextMemberId);
+        seenImportCifs.add(nextCifNumber);
+        const fallbackName = [member.firstName, member.middleName, member.lastName]
+          .filter(Boolean)
+          .join(' ')
+          .trim()
+          || normalizeImportText(pickImportValue(row, ['name', 'fullName', 'Full Name', 'Member Name']))
+          || `Imported Member ${index + 1}`;
+
         return {
           ...member,
+          memberId: nextMemberId,
+          cifNumber: nextCifNumber,
           fullName: member.fullName || fallbackName,
           firstName: member.firstName || fallbackName.split(' ')[0] || '',
           lastName: member.lastName || fallbackName.split(' ').slice(1).join(' ') || '',
+          metadata: {
+            ...(member.metadata || {}),
+            sourceRow: rowNumber,
+            sourceSheetRow: row.__sourceRow || row.__rowNumber || rowNumber,
+          },
         };
       });
 
@@ -975,9 +999,13 @@ export default function Members() {
       return;
     }
 
-    importedMembers.forEach((member) => {
-      data.createMember(member, currentUser?.username || 'System');
-    });
+    if (typeof data.createMembersBatch === 'function') {
+      data.createMembersBatch(importedMembers, currentUser?.username || 'System');
+    } else {
+      importedMembers.forEach((member) => {
+        data.createMember(member, currentUser?.username || 'System');
+      });
+    }
 
     showToast(`Imported ${importedMembers.length} member${importedMembers.length > 1 ? 's' : ''} into management.`, 'success');
   };
