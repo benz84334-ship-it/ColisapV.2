@@ -1069,10 +1069,17 @@ export default function Members() {
   const buildImportPreview = async (rows = []) => {
     const parsedRows = Array.isArray(rows) ? rows : [];
     const seenImportCifs = new Set();
+    const seenImportRows = new Set();
     const currentMembers = Array.isArray(scopedData.members) ? scopedData.members : [];
     const previewRows = parsedRows
       .map((row, index) => ({ row: { ...(row || {}) }, index }))
-      .filter(({ row }) => Object.values(row).some((value) => String(value ?? '').trim() !== ''))
+      .filter(({ row }) => {
+        const values = Object.entries(row).filter(([key]) => !key.startsWith('__')).map(([, value]) => String(value ?? '').trim());
+        return values.some(Boolean) && (
+          normalizeImportText(pickImportValue(row, ['CIFK Number', 'CIFK No.', 'CIFK No', 'CIFK', 'cifNumber']))
+          || normalizeImportText(pickImportValue(row, ['Member', 'Member Name', 'Full Name', 'Name']))
+        );
+      })
       .map(({ row, index }) => {
         const sourceRow = Number(row.__rowNumber || row.__sourceRow || index + 1);
         const sheetCif = normalizeImportText(pickImportValue(row, ['CIFK Number', 'CIFK No.', 'CIFK No', 'CIFK', 'cifNumber']));
@@ -1094,6 +1101,15 @@ export default function Members() {
           __rowNumber: sourceRow,
           __sourceRow: row.__sourceRow || sourceRow,
         }, currentMembers, seenImportCifs);
+        const identityKey = [
+          sourceRow,
+          validation.normalized.cifNumber || sheetCif || '',
+          validation.normalized.member || memberName || '',
+          validation.normalized.contact || contact || '',
+          validation.normalized.lastContributionDate || '',
+        ].map((value) => String(value || '').trim().toLowerCase()).join('|');
+        if (seenImportRows.has(identityKey)) return null;
+        seenImportRows.add(identityKey);
         return {
           ...validation.normalized,
           raw: row,
@@ -1106,7 +1122,8 @@ export default function Members() {
           isDuplicate: validation.warnings.some((item) => /duplicate|already exists/i.test(item)),
           isValid: validation.status === 'valid',
         };
-      });
+      })
+      .filter(Boolean);
 
     const total = previewRows.length;
     const valid = previewRows.filter((item) => item.isValid).length;

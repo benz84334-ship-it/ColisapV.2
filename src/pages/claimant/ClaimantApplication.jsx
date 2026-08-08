@@ -80,7 +80,20 @@ export default function ClaimantApplication() {
   const [requestTarget, setRequestTarget] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const members = useMemo(
-    () => (currentUser?.role === ROLES.ADMIN ? data.members : (data.members || []).filter((member) => String(member.branch || '') === String(currentUser?.branch || 'Main Office'))),
+    () => {
+      const scopedMembers = currentUser?.role === ROLES.ADMIN
+        ? (data.members || [])
+        : (data.members || []).filter((member) => String(member.branch || '') === String(currentUser?.branch || 'Main Office'));
+
+      const seen = new Set();
+      return scopedMembers.filter((member) => {
+        const key = String(member.id || member.memberId || member.cifNumber || '').trim();
+        if (!key) return true;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+    },
     [currentUser?.branch, currentUser?.role, data.members],
   );
   const claimNumber = useMemo(() => nextClaimNumber(data.availments || []), [data.availments]);
@@ -368,7 +381,7 @@ export default function ClaimantApplication() {
                     >
                       <option value="">Choose a member</option>
                       {members.map((member) => (
-                        <option key={member.id || member.memberId} value={member.id || member.memberId}>
+                        <option key={member.id || member.memberId || member.cifNumber} value={member.id || member.memberId || member.cifNumber}>
                           {member.fullName || member.lastName || member.memberId} - {formatCifNumber(member)}
                         </option>
                       ))}
