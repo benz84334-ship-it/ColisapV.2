@@ -66,17 +66,31 @@ export function getMembersApproachingStatusChange(members = [], _loans = [], tod
       const currentDate = normalizeDate(today);
       if (!lastContribution || !currentDate) return null;
 
+      const monthsWithoutContribution = getMonthsWithoutContribution(member, today);
+      if (monthsWithoutContribution < DORMANCY_WARNING_MONTHS) return null;
+
       const dormantThreshold = new Date(lastContribution);
       dormantThreshold.setMonth(dormantThreshold.getMonth() + DORMANT_MONTHS_WITHOUT_DEPOSIT);
       const daysUntilDormant = Math.ceil((dormantThreshold - currentDate) / (1000 * 60 * 60 * 24));
+      const isAlreadyDormant = daysUntilDormant <= 0;
 
       if (daysUntilDormant > 0 && daysUntilDormant <= 30) {
         return {
           member,
           daysUntilStatusChange: daysUntilDormant,
-          projectedStatus: daysUntilDormant <= 30 ? 'Inactive' : 'Dormant',
+          projectedStatus: 'Dormant',
           statusChangeDate: dormantThreshold.toISOString().split('T')[0],
           reminderDay: daysUntilDormant,
+        };
+      }
+
+      if (isAlreadyDormant) {
+        return {
+          member,
+          daysUntilStatusChange: 0,
+          projectedStatus: 'Dormant',
+          statusChangeDate: dormantThreshold.toISOString().split('T')[0],
+          reminderDay: 0,
         };
       }
 
