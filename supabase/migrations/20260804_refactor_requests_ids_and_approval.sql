@@ -95,7 +95,7 @@ begin
   insert into public.members (
     id, member_id, cif_number, application_status, first_name, middle_name, last_name, suffix_name, full_name,
     address, barangay, birthdate, age_years, age_months, gender, civil_status, contact_number,
-    occupation, employer, office_address, religion, religion_other, dependents, savings_account_no, membership_date,
+    occupation, employer, office_address, religion, religion_other, dependents, savings_account_no, last_contribution_date,
     signed_date, witness_staff, action_taken, approving_authority, approval_date, findings, status,
     status_override, branch, share_capital, last_share_capital_deposit_date, benefit_category,
     beneficiaries, photo, metadata, created_at, updated_at
@@ -123,7 +123,7 @@ begin
     new.first_name, new.middle_name, new.last_name, new.suffix_name, new.full_name,
     new.address, new.barangay, new.birthdate, new.age_years, new.age_months, new.gender, new.civil_status, new.contact_number,
     new.occupation, new.employer, new.office_address, coalesce(new.religion_other, new.religion), new.religion_other, new.dependents,
-    new.savings_account_no, coalesce(new.membership_date, current_date), coalesce(new.signed_date, current_date), new.witness_staff,
+    new.savings_account_no, coalesce(new.last_contribution_date, current_date), coalesce(new.signed_date, current_date), new.witness_staff,
     coalesce(new.action_taken, 'Approved'), coalesce(new.approving_authority, new.requested_by, 'System'),
     coalesce(new.approval_date, current_date), new.findings, coalesce(new.status, 'Active'), null,
     coalesce(new.branch, 'Main Office'), coalesce(new.share_capital, 0), new.last_share_capital_deposit_date,
@@ -151,7 +151,7 @@ begin
     religion = excluded.religion,
     dependents = excluded.dependents,
     savings_account_no = excluded.savings_account_no,
-    membership_date = excluded.membership_date,
+    last_contribution_date = excluded.last_contribution_date,
     signed_date = excluded.signed_date,
     witness_staff = excluded.witness_staff,
     action_taken = excluded.action_taken,

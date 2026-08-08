@@ -313,7 +313,7 @@ async function checkSmsStatus(messageId) {
 }
 
 function getMemberDormancyRow(row = {}) {
-  const reference = row.last_transaction_date || row.last_activity_date || row.last_share_capital_deposit_date || row.membership_date || row.created_at;
+  const reference = row.last_transaction_date || row.last_activity_date || row.last_share_capital_deposit_date || row.last_contribution_date || row.membership_date || row.created_at;
   return {
     ...row,
     last_activity_date: reference || null,
@@ -327,7 +327,7 @@ async function getDormancyCandidates() {
     `
       SELECT id, member_id, cif_number, full_name, first_name, contact_number, status, status_override,
              application_status, last_transaction_date, last_activity_date, last_share_capital_deposit_date,
-             membership_date, created_at
+             last_contribution_date, membership_date, created_at
       FROM members
       WHERE COALESCE(status_override, status) = 'Active'
     `,
@@ -931,7 +931,7 @@ app.get('/api/admin/dormancy-notifications/overview', requireAdmin, async (_req,
   const [warningRows] = await pool.query(
     `
       SELECT id, full_name, first_name, contact_number, last_transaction_date, last_activity_date, last_share_capital_deposit_date,
-             membership_date, created_at, status, status_override
+             last_contribution_date, membership_date, created_at, status, status_override
       FROM members
       WHERE COALESCE(status_override, status) = 'Active'
     `,

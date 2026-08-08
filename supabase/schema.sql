@@ -249,7 +249,7 @@ begin
   insert into public.members (
     id, member_id, cif_number, application_status, first_name, middle_name, last_name, suffix_name, full_name,
     address, barangay, birthdate, age_years, age_months, gender, civil_status, contact_number,
-    occupation, employer, office_address, religion, religion_other, dependents, savings_account_no, membership_date,
+    occupation, employer, office_address, religion, religion_other, dependents, savings_account_no, last_contribution_date,
     signed_date, witness_staff, action_taken, approving_authority, approval_date, findings, status,
     status_override, branch, share_capital, last_share_capital_deposit_date, benefit_category,
     beneficiaries, photo, metadata, created_at, updated_at
@@ -277,7 +277,7 @@ begin
     new.first_name, new.middle_name, new.last_name, new.suffix_name, new.full_name,
     new.address, new.barangay, new.birthdate, new.age_years, new.age_months, new.gender, new.civil_status, new.contact_number,
     new.occupation, new.employer, new.office_address, coalesce(new.religion_other, new.religion), new.religion_other, new.dependents,
-    new.savings_account_no, coalesce(new.membership_date, current_date), coalesce(new.signed_date, current_date), new.witness_staff,
+    new.savings_account_no, coalesce(new.last_contribution_date, current_date), coalesce(new.signed_date, current_date), new.witness_staff,
     coalesce(new.action_taken, 'Approved'), coalesce(new.approving_authority, new.requested_by, 'System'),
     coalesce(new.approval_date, current_date), new.findings, coalesce(new.status, 'Active'), null,
     coalesce(new.branch, 'Main Office'), coalesce(new.share_capital, 0), new.last_share_capital_deposit_date,
@@ -305,7 +305,7 @@ begin
     religion = excluded.religion,
     dependents = excluded.dependents,
     savings_account_no = excluded.savings_account_no,
-    membership_date = excluded.membership_date,
+    last_contribution_date = excluded.last_contribution_date,
     signed_date = excluded.signed_date,
     witness_staff = excluded.witness_staff,
     action_taken = excluded.action_taken,
@@ -397,7 +397,7 @@ declare
   address_text text;
   barangay_text text;
   contact_text text;
-  membership_date_value date;
+  last_contribution_date_value date;
   share_capital_value numeric(14,2);
 begin
   first_name := coalesce(nullif(trim(payload->>'firstName'), ''), nullif(trim(payload->>'first_name'), ''), nullif(trim(payload->>'first_name'), ''), nullif(trim(payload->>'First Name'), ''), nullif(trim(payload->>'First name'), ''));
@@ -406,9 +406,13 @@ begin
   address_text := coalesce(nullif(trim(payload->>'address'), ''), nullif(trim(payload->>'Address'), ''), nullif(trim(payload->>'Home Address'), ''));
   barangay_text := coalesce(nullif(trim(payload->>'barangay'), ''), nullif(trim(payload->>'Barangay'), ''), nullif(trim(payload->>'Barangay / Municipality'), ''), nullif(trim(payload->>'Municipality'), ''));
   contact_text := coalesce(nullif(trim(payload->>'contactNumber'), ''), nullif(trim(payload->>'contact_number'), ''), nullif(trim(payload->>'Contact Number'), ''), nullif(trim(payload->>'Mobile Number'), ''), nullif(trim(payload->>'Phone Number'), ''));
-  membership_date_value := case
-    when nullif(trim(payload->>'membershipDate'), '') is null then null
-    else (trim(payload->>'membershipDate'))::date
+  last_contribution_date_value := case
+    when nullif(trim(payload->>'lastContributionDate'), '') is null then
+      case
+        when nullif(trim(payload->>'membershipDate'), '') is null then null
+        else (trim(payload->>'membershipDate'))::date
+      end
+    else (trim(payload->>'lastContributionDate'))::date
   end;
   share_capital_value := case
     when nullif(trim(payload->>'shareCapital'), '') is null then 0
@@ -439,7 +443,7 @@ begin
     'religion_other', coalesce(nullif(trim(payload->>'religionOther'), ''), nullif(trim(payload->>'religion_other'), '')),
     'dependents', case when nullif(trim(payload->>'dependents'), '') is null then 0 else (trim(payload->>'dependents'))::integer end,
     'savings_account_no', coalesce(nullif(trim(payload->>'savingsAccountNo'), ''), nullif(trim(payload->>'savings_account_no'), '')),
-    'membership_date', membership_date_value,
+    'last_contribution_date', last_contribution_date_value,
     'signed_date', case when nullif(trim(payload->>'signedDate'), '') is null then null else (trim(payload->>'signedDate'))::date end,
     'witness_staff', coalesce(nullif(trim(payload->>'witnessStaff'), ''), nullif(trim(payload->>'witness_staff'), '')),
     'action_taken', coalesce(nullif(trim(payload->>'actionTaken'), ''), 'Pending'),
@@ -485,7 +489,7 @@ create table if not exists public.members (
   religion_other text,
   dependents integer not null default 0,
   savings_account_no text,
-  membership_date date,
+  last_contribution_date date,
   signed_date date,
   witness_staff text,
   action_taken text,
@@ -567,7 +571,7 @@ create table if not exists public.requests (
   religion_other text,
   dependents integer not null default 0,
   savings_account_no text,
-  membership_date date,
+  last_contribution_date date,
   signed_date date,
   witness_staff text,
   action_taken text,

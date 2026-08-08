@@ -187,7 +187,7 @@ function memberRowToAppMember(row = {}) {
     religion: row.religion,
     dependents: row.dependents,
     savingsAccountNo: row.savings_account_no,
-    membershipDate: row.membership_date,
+    lastContributionDate: row.last_contribution_date ?? row.membership_date,
     signedDate: row.signed_date,
     witnessStaff: row.witness_staff,
     actionTaken: row.action_taken,

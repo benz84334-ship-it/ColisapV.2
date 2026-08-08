@@ -17,7 +17,6 @@ import { formatCurrency, formatDate, formatCifNumber, nextCifNumber, todayIso } 
 import { getComputedMemberStatus } from '../../utils/memberStatus.js';
 import { buildErrorMap, isPhone, required, uniqueBy } from '../../utils/validation.js';
 import { uploadMemberPhoto } from '../../services/supabaseFileStorage.js';
-import { importMembersFromRows } from '../../utils/memberImport.js';
 
 const APPLICATION_STATUS_OPTIONS = ['New', 'Re-application'];
 const CIVIL_STATUS_OPTIONS = ['Single', 'Married', 'Widowed', 'Separated'];
@@ -65,6 +64,75 @@ const NATIONALITY_OPTIONS = [
   'Others (specify)',
 ];
 const SUFFIX_NAME_OPTIONS = ['', 'Jr.', 'Sr.', 'II', 'III', 'IV', 'V'];
+
+function normalizeImportText(value) {
+  return String(value ?? '').replace(/\s+/g, ' ').trim();
+}
+
+function pickImportValue(row = {}, keys = []) {
+  const lookup = Object.entries(row).reduce((accumulator, [key, value]) => {
+    accumulator[String(key).toLowerCase().replace(/[^a-z0-9]+/g, '')] = value;
+    return accumulator;
+  }, {});
+
+  for (const key of keys) {
+    const normalizedKey = String(key).toLowerCase().replace(/[^a-z0-9]+/g, '');
+    const value = lookup[normalizedKey];
+    if (value !== undefined && value !== null && String(value).trim() !== '') return value;
+  }
+
+  return '';
+}
+
+function mapImportedMemberRow(row = {}, generatedCifNumber = '') {
+  const firstName = normalizeImportText(pickImportValue(row, ['firstName', 'First Name', 'first_name']));
+  const middleName = normalizeImportText(pickImportValue(row, ['middleName', 'Middle Name', 'middle_name']));
+  const lastName = normalizeImportText(pickImportValue(row, ['lastName', 'Last Name', 'last_name']));
+  const fullName = normalizeImportText(pickImportValue(row, ['fullName', 'Full Name', 'Member Name', 'name']))
+    || [firstName, middleName, lastName].filter(Boolean).join(' ');
+  return {
+    memberId: generatedCifNumber || '',
+    cifNumber: generatedCifNumber || '',
+    applicationStatus: 'New',
+    benefitCategory: MEMBER_BENEFIT_CATEGORIES[0],
+    firstName,
+    middleName,
+    lastName,
+    fullName,
+    address: normalizeImportText(pickImportValue(row, ['address', 'Address', 'Present Address', 'Home Address'])),
+    barangay: normalizeImportText(pickImportValue(row, ['barangay', 'Barangay', 'Municipality', 'Barangay / Municipality'])),
+    birthdate: normalizeImportText(pickImportValue(row, ['birthdate', 'Date of Birth', 'Birth Date'])) || '',
+    ageYears: '',
+    ageMonths: '',
+    gender: normalizeImportText(pickImportValue(row, ['gender', 'Sex'])),
+    civilStatus: normalizeImportText(pickImportValue(row, ['civilStatus', 'Civil Status', 'civil_status'])),
+    contactNumber: normalizeImportText(pickImportValue(row, ['contactNumber', 'Contact Number', 'Contact No.', 'Mobile Number', 'Phone Number'])),
+    occupation: normalizeImportText(pickImportValue(row, ['occupation', 'Occupation'])),
+    employer: normalizeImportText(pickImportValue(row, ['employer', 'Employer'])),
+    officeAddress: normalizeImportText(pickImportValue(row, ['officeAddress', 'Office Address', 'office_address'])),
+    religion: normalizeImportText(pickImportValue(row, ['religion', 'Religion'])),
+    religionOther: '',
+    dependents: 0,
+    beneficiaries: [],
+    savingsAccountNo: normalizeImportText(pickImportValue(row, ['savingsAccountNo', 'Savings Account No.', 'savings_account_no'])),
+    membershipDate: normalizeImportText(pickImportValue(row, ['membershipDate', 'Membership Date', 'lastContributionDate', 'Last Contribution Date'])) || todayIso(),
+    signedDate: todayIso(),
+    witnessStaff: normalizeImportText(pickImportValue(row, ['witnessStaff', 'Witness / BMPC Staff'])),
+    actionTaken: 'Pending',
+    approvingAuthority: '',
+    approvalDate: '',
+    findings: '',
+    status: normalizeImportText(pickImportValue(row, ['status', 'Member Status'])) || 'Active',
+    photo: '',
+    shareCapital: 0,
+    lastShareCapitalDepositDate: todayIso(),
+    branch: 'Main Office',
+    metadata: {
+      importedFrom: 'excel',
+      importedAt: new Date().toISOString(),
+    },
+  };
+}
 function emptyBeneficiary() {
   return {
     name: '',
@@ -175,7 +243,7 @@ function CustomerInformationFile({ member }) {
           <DetailItem label="Customer Status" value={member.status} />
           <DetailItem label="COLISAP Category" value={member.benefitCategory} />
           <DetailItem label="Application Status" value={member.applicationStatus} />
-          <DetailItem label="Membership Date" value={formatDate(member.membershipDate)} />
+          <DetailItem label="Last Contribution Date" value={formatDate(member.membershipDate)} />
           <DetailItem label="Savings Account No." value={member.savingsAccountNo} />
         </div>
       </Section>
@@ -569,7 +637,7 @@ export default function Members() {
         render: (row) => formatCurrency(Number(row.shareCapital || 0)),
       },
       { key: 'contactNumber', label: 'Contact', className: 'whitespace-nowrap', cellClassName: 'whitespace-nowrap' },
-      { key: 'membershipDate', label: 'Membership Date', className: 'whitespace-nowrap', cellClassName: 'whitespace-nowrap', render: (row) => formatDate(row.membershipDate) },
+      { key: 'membershipDate', label: 'Last Contribution Date', className: 'whitespace-nowrap', cellClassName: 'whitespace-nowrap', render: (row) => formatDate(row.membershipDate) },
       { key: 'status', label: 'Status', className: 'whitespace-nowrap', cellClassName: 'whitespace-nowrap', render: (row) => <Badge>{row.status}</Badge> },
     ],
     [],
@@ -798,11 +866,14 @@ export default function Members() {
 
   const handleImportedMembers = (rows = []) => {
     const parsedRows = Array.isArray(rows) ? rows : [];
-    const importedMembers = importMembersFromRows(parsedRows).filter((member, index) => {
-      const sourceRow = parsedRows[index] || {};
-      const hasAnyValue = Object.values(sourceRow).some((value) => String(value ?? '').trim() !== '');
-      return hasAnyValue && (member.fullName || member.firstName || member.lastName || member.address || member.contactNumber);
-    });
+    const importedMembers = parsedRows
+      .filter((row) => Object.values(row || {}).some((value) => String(value ?? '').trim() !== ''))
+      .map((row, index) => {
+        const generatedCifNumber = nextCifNumber([...(scopedData.members || [])], todayIso());
+        return mapImportedMemberRow(row, generatedCifNumber || `CIFK-${String(new Date().getFullYear())}-${String(index + 1).padStart(5, '0')}`);
+      })
+      .filter((member) => member.fullName || member.firstName || member.lastName || member.address || member.contactNumber);
+
     if (!importedMembers.length) {
       showToast('No member rows were found in the selected file.', 'error');
       return;
@@ -812,7 +883,7 @@ export default function Members() {
       data.createMember(member, currentUser?.username || 'System');
     });
 
-    showToast(`Imported ${importedMembers.length} member${importedMembers.length > 1 ? 's' : ''} into management.`);
+    showToast(`Imported ${importedMembers.length} member${importedMembers.length > 1 ? 's' : ''} into management.`, 'success');
   };
 
   const finishRequestReview = (message) => {
@@ -910,7 +981,7 @@ export default function Members() {
           />
           <FormField as="select" disabled={isRequestApprovalPage} label="Benefit Category" options={MEMBER_BENEFIT_CATEGORIES} value={normalizeBenefitCategory(currentForm.benefitCategory)} onChange={(event) => (requestTarget ? setReturnedDraft((current) => ({ ...current, benefitCategory: event.target.value })) : setForm((current) => ({ ...current, benefitCategory: event.target.value })))} />
           <FormField as="select" disabled={isRequestApprovalPage} label="Application Status" options={APPLICATION_STATUS_OPTIONS} value={currentForm.applicationStatus} onChange={(event) => (requestTarget ? setReturnedDraft((current) => ({ ...current, applicationStatus: event.target.value })) : setForm((current) => ({ ...current, applicationStatus: event.target.value })))} />
-          <FormField error={errors.membershipDate} disabled={isRequestApprovalPage} label="Membership Date" type="date" value={currentForm.membershipDate} onChange={(event) => (requestTarget ? setReturnedDraft((current) => ({ ...current, membershipDate: event.target.value })) : setForm((current) => ({ ...current, membershipDate: event.target.value })))} />
+          <FormField error={errors.membershipDate} disabled={isRequestApprovalPage} label="Last Contribution Date" type="date" value={currentForm.membershipDate} onChange={(event) => (requestTarget ? setReturnedDraft((current) => ({ ...current, membershipDate: event.target.value })) : setForm((current) => ({ ...current, membershipDate: event.target.value })))} />
         </div>
       </Section>
 
@@ -1204,7 +1275,7 @@ export default function Members() {
               </section>
             </div>
           ) : (
-            <DataTable
+          <DataTable
               addAction={!isRequestMemberPage && isStaff ? (
                 <Button icon={FiUserPlus} variant="secondary" onClick={() => navigate('/request-member')}>
                   Request Member
@@ -1232,7 +1303,7 @@ export default function Members() {
               ]}
               searchFields={['memberId', 'fullName', 'firstName', 'lastName', 'middleName', 'suffixName', 'barangay', 'contactNumber', 'address', 'occupation', 'employer']}
               title="Members"
-              />
+            />
           )}
 
           <Modal
