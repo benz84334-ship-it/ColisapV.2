@@ -195,6 +195,12 @@ function toNumberOrZero(value) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+function toNumberOrNull(value) {
+  if (value === '' || value === null || value === undefined) return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
 function toDateOrNull(value) {
   if (value === '' || value === null || value === undefined) return null;
   return value;
@@ -284,9 +290,9 @@ const TABLE_SYNCERS = {
       suffix_name: item.suffixName ?? null,
       address: item.address ?? null,
       barangay: item.barangay ?? null,
-      birthdate: item.birthdate ?? null,
-      age_years: item.ageYears ?? null,
-      age_months: item.ageMonths ?? null,
+      birthdate: toDateOrNull(item.birthdate),
+      age_years: toNumberOrNull(item.ageYears),
+      age_months: toNumberOrNull(item.ageMonths),
       gender: item.gender ?? null,
       civil_status: item.civilStatus ?? null,
       contact_number: normalizeContactNumber(item.contactNumber) || null,
@@ -295,16 +301,16 @@ const TABLE_SYNCERS = {
       office_address: item.officeAddress ?? null,
       religion: item.religion ?? null,
       religion_other: item.religionOther ?? null,
-      dependents: item.dependents ?? 0,
+      dependents: toNumberOrZero(item.dependents),
       savings_account_no: item.savingsAccountNo ?? null,
-      last_contribution_date: item.lastContributionDate ?? item.membershipDate ?? null,
-      signed_date: item.signedDate ?? null,
+      last_contribution_date: toDateOrNull(item.lastContributionDate ?? item.membershipDate),
+      signed_date: toDateOrNull(item.signedDate),
       witness_staff: item.witnessStaff ?? null,
       action_taken: item.actionTaken ?? null,
       approving_authority: item.approvingAuthority ?? null,
-      approval_date: item.approvalDate ?? null,
+      approval_date: toDateOrNull(item.approvalDate),
       findings: item.findings ?? null,
-      last_share_capital_deposit_date: item.lastShareCapitalDepositDate ?? null,
+      last_share_capital_deposit_date: toDateOrNull(item.lastShareCapitalDepositDate),
       benefit_category: item.benefitCategory ?? null,
       share_capital: item.shareCapital ?? 0,
       status_override: item.statusOverride ?? null,

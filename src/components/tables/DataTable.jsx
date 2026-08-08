@@ -1,6 +1,5 @@
-import { useEffect, useMemo, useState, useRef } from 'react';
-import { FiChevronDown, FiChevronLeft, FiChevronRight, FiChevronUp, FiSearch, FiDownload, FiFile, FiPrinter } from 'react-icons/fi';
-import { exportToCSV, exportToExcel, printCurrentView } from '../../utils/exporters.js';
+import { useEffect, useMemo, useState } from 'react';
+import { FiChevronDown, FiChevronLeft, FiChevronRight, FiChevronUp, FiSearch } from 'react-icons/fi';
 import parseFile from '../../utils/importers.js';
 import { normalizeText } from '../../utils/formatters.js';
 import Button from '../ui/Button.jsx';
@@ -33,16 +32,12 @@ export default function DataTable({
   hideHeader = false,
   hideHeaderText = false,
   hideTools = false,
-  hideExportTools = false,
   initialSortKey,
   initialSortDirection = 'asc',
 }) {
   const [query, setQuery] = useState('');
   const [filterValues, setFilterValues] = useState({});
   const [sort, setSort] = useState({ key: initialSortKey ?? columns[0]?.key, direction: initialSortDirection });
-  const [isImporting, setIsImporting] = useState(false);
-  const csvInputRef = useRef(null);
-  const excelInputRef = useRef(null);
   const [page, setPage] = useState(1);
 
   useEffect(() => {
@@ -90,35 +85,6 @@ export default function DataTable({
     }));
   };
 
-  const handleImportSelection = async (event, type) => {
-    const file = event.target.files && event.target.files[0];
-    if (!file) return;
-
-    const confirmed = typeof window !== 'undefined'
-      ? window.confirm(`Import ${file.name} into the current view?`)
-      : true;
-
-    if (!confirmed) {
-      event.target.value = '';
-      return;
-    }
-
-    try {
-      setIsImporting(true);
-      const rows = await parseFile(file);
-      if (onImport) await onImport(rows, file);
-      else if (type === 'csv') console.log('Imported CSV rows', rows);
-      else console.log('Imported Excel rows', rows);
-    } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error(`Failed to import ${type === 'csv' ? 'CSV' : 'Excel'}`, err);
-    } finally {
-      setIsImporting(false);
-    }
-
-    event.target.value = '';
-  };
-
   return (
     <section className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-950">
       {!hideHeader ? (
@@ -129,37 +95,9 @@ export default function DataTable({
               {description ? <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{description}</p> : null}
             </div>
           ) : <div />}
-          {hideExportTools ? null : (
-            <div className="flex flex-wrap items-center gap-2 no-print">
-              {addAction}
-              <input
-                ref={csvInputRef}
-                type="file"
-                accept=".csv,text/csv"
-                className="hidden"
-                onChange={(e) => handleImportSelection(e, 'csv')}
-              />
-              <input
-                ref={excelInputRef}
-                type="file"
-                accept=".xls,.xlsx,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                className="hidden"
-                onChange={(e) => handleImportSelection(e, 'excel')}
-              />
-              <button type="button" className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:hover:border-slate-600 dark:hover:bg-slate-800" onClick={() => csvInputRef.current && csvInputRef.current.click()}>
-                <FiDownload />
-                {isImporting ? 'Importing...' : 'Import CSV'}
-              </button>
-              <button type="button" className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:hover:border-slate-600 dark:hover:bg-slate-800" onClick={() => excelInputRef.current && excelInputRef.current.click()} disabled={isImporting}>
-                <FiFile />
-                {isImporting ? 'Importing...' : 'Import Excel'}
-              </button>
-              <button type="button" className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:hover:border-slate-600 dark:hover:bg-slate-800" onClick={() => printCurrentView()}>
-                <FiPrinter />
-                Print
-              </button>
-            </div>
-          )}
+          <div className="flex flex-wrap items-center gap-2 no-print">
+            {addAction}
+          </div>
         </div>
       ) : null}
 

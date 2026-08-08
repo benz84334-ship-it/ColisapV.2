@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
-import { FiCheckCircle, FiEdit2, FiSearch, FiTrash2, FiUserPlus } from 'react-icons/fi';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { FiCheckCircle, FiEdit2, FiFile, FiPrinter, FiSearch, FiTrash2, FiUpload, FiUserPlus } from 'react-icons/fi';
 import { useLocation, useNavigate } from 'react-router-dom';
 import DataTable from '../../components/tables/DataTable.jsx';
 import Badge from '../../components/ui/Badge.jsx';
@@ -17,6 +17,7 @@ import { formatCurrency, formatDate, formatCifNumber, nextCifNumber, todayIso } 
 import { getComputedMemberStatus } from '../../utils/memberStatus.js';
 import { buildErrorMap, isPhone, required, uniqueBy } from '../../utils/validation.js';
 import { uploadMemberPhoto } from '../../services/supabaseFileStorage.js';
+import parseFile from '../../utils/importers.js';
 
 const APPLICATION_STATUS_OPTIONS = ['New', 'Re-application'];
 const CIVIL_STATUS_OPTIONS = ['Single', 'Married', 'Widowed', 'Separated'];
@@ -64,6 +65,15 @@ const NATIONALITY_OPTIONS = [
   'Others (specify)',
 ];
 const SUFFIX_NAME_OPTIONS = ['', 'Jr.', 'Sr.', 'II', 'III', 'IV', 'V'];
+const IMPORT_HEADERS = [
+  'CIFK Number',
+  'Member',
+  'Barangay / Municipality',
+  'Savings',
+  'Contact',
+  'Last Contribution Date',
+  'Status',
+];
 
 function normalizeImportText(value) {
   return String(value ?? '').replace(/\s+/g, ' ').trim();
@@ -230,6 +240,92 @@ function mapImportedMemberRow(row = {}, generatedCifNumber = '') {
       sourceRow: sourceRow || null,
       sourceSheetRow: sourceRow || null,
       sourceIdentity,
+    },
+  };
+}
+
+function normalizeImportStatus(value = '') {
+  const normalized = normalizeImportText(value).toLowerCase();
+  if (normalized === 'active') return 'Active';
+  if (normalized === 'inactive') return 'Inactive';
+  if (normalized === 'dormant') return 'Dormant';
+  return '';
+}
+
+function formatTemplateCsv() {
+  return [
+    IMPORT_HEADERS.join(','),
+    'CIFK-2026-58321,Juan Dela Cruz,"Bayo Grande, Anini-y, Antique",500,09171234567,08/08/2026,Active',
+  ].join('\n');
+}
+
+function createCsvDownload(filename, content) {
+  const blob = new Blob([content], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = filename;
+  anchor.click();
+  URL.revokeObjectURL(url);
+}
+
+function validateImportedMemberRow(row = {}, currentMembers = [], seenCifs = new Set()) {
+  const errors = [];
+  const warnings = [];
+  const rowNumber = Number(row.__rowNumber || row.__sourceRow || 0);
+  const emptyRow = Object.entries(row).every(([key, value]) => key.startsWith('__') || String(value ?? '').trim() === '');
+  if (emptyRow) {
+    return { status: 'invalid', errors: ['Completely empty row'], warnings: [], isEmpty: true };
+  }
+
+  const cifNumber = normalizeImportText(row.cifNumber || row['CIFK Number'] || row['CIFK No.'] || row['CIFK No'] || row.CIFK || '');
+  const memberName = normalizeImportText(row.member || row.Member || '');
+  const barangay = normalizeImportText(row['Barangay / Municipality'] || row.barangay || '');
+  const savingsRaw = String(row.Savings ?? row.savings ?? '').trim();
+  const contact = normalizeImportText(row.Contact || row.contact || '');
+  const lastContributionDateRaw = row['Last Contribution Date'] || row.lastContributionDate || '';
+  const status = normalizeImportStatus(row.Status || row.status || '');
+  const duplicatedInFile = cifNumber && seenCifs.has(cifNumber);
+  const existingSupabase = cifNumber
+    ? currentMembers.some((member) => String(member.cifNumber || '').trim() === cifNumber || String(member.memberId || '').trim() === cifNumber)
+    : false;
+
+  if (!memberName) errors.push('Member name is required');
+
+  if (cifNumber && !/^CIFK-\d{4}-\d{5}$/.test(cifNumber)) errors.push('Invalid CIFK format');
+  if (!cifNumber) warnings.push('CIFK will be generated');
+  if (duplicatedInFile) warnings.push('Duplicate CIFK');
+  if (existingSupabase) warnings.push('CIFK already exists');
+
+  if (savingsRaw) {
+    const parsedSavings = Number(String(savingsRaw).replace(/,/g, ''));
+    if (!Number.isFinite(parsedSavings)) errors.push('Savings must be numeric');
+  }
+
+  if (contact && !isPhone(contact)) errors.push('Invalid Contact');
+  if (lastContributionDateRaw && !normalizeImportedDate(lastContributionDateRaw)) errors.push('Invalid contribution date');
+  if (row.Status || row.status) {
+    if (!status) errors.push('Invalid member status');
+  }
+
+  const validation = errors[0] || warnings[0] || 'Valid';
+  const level = errors.length ? 'invalid' : warnings.length ? 'warning' : 'valid';
+  if (cifNumber) seenCifs.add(cifNumber);
+
+  return {
+    status: level,
+    validation,
+    errors,
+    warnings,
+    rowNumber,
+    normalized: {
+      cifNumber,
+      member: memberName,
+      barangay,
+      savings: savingsRaw,
+      contact,
+      lastContributionDate: normalizeImportedDate(lastContributionDateRaw),
+      status: status || 'Active',
     },
   };
 }
@@ -679,12 +775,18 @@ export default function Members() {
   const [form, setForm] = useState(blankMember);
   const [photoFile, setPhotoFile] = useState(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [importModalOpen, setImportModalOpen] = useState(false);
+  const [importRows, setImportRows] = useState([]);
+  const [importSummary, setImportSummary] = useState({ total: 0, valid: 0, invalid: 0, duplicates: 0 });
+  const [isImporting, setIsImporting] = useState(false);
   const [errors, setErrors] = useState({});
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [requestTarget, setRequestTarget] = useState(null);
   const [returnedDraft, setReturnedDraft] = useState(blankMember);
   const [reviewDraft, setReviewDraft] = useState(blankMember);
   const [reviewReason, setReviewReason] = useState('');
+  const csvInputRef = useRef(null);
+  const excelInputRef = useRef(null);
   const currentForm = isRequestApprovalPage && requestTarget ? reviewDraft : requestTarget ? returnedDraft : form;
   const generatedCifNumber = useMemo(
     () => nextCifNumber([...(scopedData.members || []), ...(scopedData.requests || [])]),
@@ -964,66 +1066,125 @@ export default function Members() {
     showToast('Member deleted.');
   };
 
-  const handleImportedMembers = async (rows = []) => {
+  const buildImportPreview = async (rows = []) => {
     const parsedRows = Array.isArray(rows) ? rows : [];
-    const seenImportIds = new Set();
     const seenImportCifs = new Set();
-    const importedMembers = parsedRows
+    const currentMembers = Array.isArray(scopedData.members) ? scopedData.members : [];
+    const previewRows = parsedRows
       .map((row, index) => ({ row: { ...(row || {}) }, index }))
-      .filter(({ row }) => Object.entries(row).some(([key, value]) => !key.startsWith('__') && String(value ?? '').trim() !== ''))
+      .filter(({ row }) => Object.values(row).some((value) => String(value ?? '').trim() !== ''))
       .map(({ row, index }) => {
-        const rowNumber = Number(row.__rowNumber || row.__sourceRow || index + 1);
-        const rowSpecificFallback = `CIFK-${String(new Date().getFullYear())}-${String(rowNumber).padStart(5, '0')}`;
-        const member = mapImportedMemberRow({
+        const sourceRow = Number(row.__rowNumber || row.__sourceRow || index + 1);
+        const sheetCif = normalizeImportText(pickImportValue(row, ['CIFK Number', 'CIFK No.', 'CIFK No', 'CIFK', 'cifNumber']));
+        const memberName = normalizeImportText(pickImportValue(row, ['Member', 'Member Name', 'Full Name', 'Name']));
+        const barangay = normalizeImportText(pickImportValue(row, ['Barangay / Municipality', 'Barangay', 'Municipality']));
+        const savings = normalizeImportText(pickImportValue(row, ['Savings']));
+        const contact = normalizeImportText(pickImportValue(row, ['Contact']));
+        const lastContribution = pickImportValue(row, ['Last Contribution Date']);
+        const status = normalizeImportStatus(pickImportValue(row, ['Status']));
+        const validation = validateImportedMemberRow({
           ...row,
-          __rowNumber: rowNumber,
-          __sourceRow: row.__sourceRow || rowNumber,
-        }, rowSpecificFallback);
-        const nextMemberId = member.memberId && !seenImportIds.has(member.memberId)
-          ? member.memberId
-          : rowSpecificFallback;
-        const nextCifNumber = member.cifNumber && !seenImportCifs.has(member.cifNumber)
-          ? member.cifNumber
-          : rowSpecificFallback;
-        seenImportIds.add(nextMemberId);
-        seenImportCifs.add(nextCifNumber);
-        const fallbackName = [member.firstName, member.middleName, member.lastName]
-          .filter(Boolean)
-          .join(' ')
-          .trim()
-          || normalizeImportText(pickImportValue(row, ['name', 'fullName', 'Full Name', 'Member Name']))
-          || `Imported Member ${index + 1}`;
-
+          cifNumber: sheetCif,
+          member: memberName,
+          barangay,
+          Savings: savings,
+          Contact: contact,
+          'Last Contribution Date': lastContribution,
+          Status: status,
+          __rowNumber: sourceRow,
+          __sourceRow: row.__sourceRow || sourceRow,
+        }, currentMembers, seenImportCifs);
         return {
-          ...member,
-          memberId: nextMemberId,
-          cifNumber: nextCifNumber,
-          fullName: member.fullName || fallbackName,
-          firstName: member.firstName || fallbackName.split(' ')[0] || '',
-          lastName: member.lastName || fallbackName.split(' ').slice(1).join(' ') || '',
-          metadata: {
-            ...(member.metadata || {}),
-            sourceRow: rowNumber,
-            sourceSheetRow: row.__sourceRow || row.__rowNumber || rowNumber,
-            importKey: `${rowNumber}-${nextMemberId}-${nextCifNumber}`,
-          },
+          ...validation.normalized,
+          raw: row,
+          rowNumber: sourceRow,
+          normalized: validation.normalized,
+          validation: validation.validation,
+          statusTone: validation.status,
+          errors: validation.errors,
+          warnings: validation.warnings,
+          isDuplicate: validation.warnings.some((item) => /duplicate|already exists/i.test(item)),
+          isValid: validation.status === 'valid',
         };
       });
 
-    if (!importedMembers.length) {
-      showToast('No member rows were found in the selected file.', 'error');
+    const total = previewRows.length;
+    const valid = previewRows.filter((item) => item.isValid).length;
+    const invalid = previewRows.filter((item) => item.statusTone === 'invalid').length;
+    const duplicates = previewRows.filter((item) => item.isDuplicate).length;
+    setImportRows(previewRows);
+    setImportSummary({ total, valid, invalid, duplicates });
+    setImportModalOpen(true);
+  };
+
+  const handleImportSelection = async (event) => {
+    const file = event.target.files && event.target.files[0];
+    if (!file) return;
+    try {
+      setIsImporting(true);
+      const rows = await parseFile(file);
+      await buildImportPreview(rows);
+    } catch (error) {
+      console.error(error);
+      showToast(error.message || 'Unable to read import file.', 'error');
+    } finally {
+      setIsImporting(false);
+      event.target.value = '';
+    }
+  };
+
+  const importValidMembers = async () => {
+    const validRows = importRows.filter((row) => row.isValid);
+    if (!validRows.length) {
+      showToast('No valid rows to import.', 'error');
       return;
     }
 
-    if (typeof data.createMembersBatch === 'function') {
-      await data.createMembersBatch(importedMembers, currentUser?.username || 'System');
-    } else {
-      await Promise.all(importedMembers.map((member) => {
-        data.createMember(member, currentUser?.username || 'System');
-      }));
-    }
+    const importedMembers = validRows.map((row, index) => {
+      const rowNumber = row.rowNumber || index + 1;
+      const member = mapImportedMemberRow({
+        ...row.raw,
+        __rowNumber: rowNumber,
+        __sourceRow: rowNumber,
+      }, row.cifNumber || '');
+      return {
+        ...member,
+        cifNumber: row.cifNumber || member.cifNumber,
+        memberId: row.cifNumber || member.memberId,
+        fullName: row.member || member.fullName,
+        full_name: row.member || member.fullName,
+        barangay: row.barangay || member.barangay,
+        shareCapital: normalizeImportedNumber(row.savings),
+        contactNumber: row.contact || member.contactNumber,
+        membershipDate: row.lastContributionDate || member.membershipDate,
+        status: row.statusTone === 'invalid' ? 'Active' : row.normalized.status,
+        metadata: {
+          ...(member.metadata || {}),
+          importedFrom: 'csv_excel',
+          sourceRow: rowNumber,
+          sourceSheetRow: rowNumber,
+          importKey: `${rowNumber}-${row.cifNumber || member.cifNumber}`,
+        },
+      };
+    });
 
-    showToast(`Imported ${importedMembers.length} member${importedMembers.length > 1 ? 's' : ''} into management.`, 'success');
+    setIsImporting(true);
+    try {
+      if (typeof data.createMembersBatch === 'function') {
+        await data.createMembersBatch(importedMembers, currentUser?.username || 'System');
+      } else {
+        await Promise.all(importedMembers.map((member) => data.createMember(member, currentUser?.username || 'System')));
+      }
+      showToast(`${importedMembers.length} members imported successfully. ${importRows.length - importedMembers.length} row(s) skipped.`, 'success');
+      setImportModalOpen(false);
+      setImportRows([]);
+      setImportSummary({ total: 0, valid: 0, invalid: 0, duplicates: 0 });
+    } catch (error) {
+      console.error(error);
+      showToast(error.message || 'Unable to import members.', 'error');
+    } finally {
+      setIsImporting(false);
+    }
   };
 
   const finishRequestReview = (message) => {
@@ -1417,12 +1578,35 @@ export default function Members() {
             </div>
           ) : (
           <DataTable
-              addAction={!isRequestMemberPage && isStaff ? (
-                <Button icon={FiUserPlus} variant="secondary" onClick={() => navigate('/request-member')}>
-                  Request Member
-                </Button>
-              ) : null}
-              onImport={handleImportedMembers}
+              addAction={(
+                <div className="flex flex-wrap gap-2">
+                  {!isRequestMemberPage && isStaff ? (
+                    <Button icon={FiUserPlus} variant="secondary" onClick={() => navigate('/request-member')}>
+                      Request Member
+                    </Button>
+                  ) : null}
+                  <input
+                    ref={csvInputRef}
+                    type="file"
+                    accept=".csv,text/csv"
+                    className="hidden"
+                    onChange={handleImportSelection}
+                  />
+                  <input
+                    ref={excelInputRef}
+                    type="file"
+                    accept=".xls,.xlsx,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    className="hidden"
+                    onChange={handleImportSelection}
+                  />
+                  <Button icon={FiUpload} variant="secondary" onClick={() => csvInputRef.current?.click()} disabled={isImporting}>
+                    Import CSV
+                  </Button>
+                  <Button icon={FiFile} variant="secondary" onClick={() => excelInputRef.current?.click()} disabled={isImporting}>
+                    Import Excel
+                  </Button>
+                </div>
+              )}
               actions={(scopedData.members).length ? (row) => (
                 <div className="flex justify-end gap-2 whitespace-nowrap">
                   <Button className="px-3 py-2 text-sm" icon={FiEdit2} variant="secondary" onClick={() => openForm(row)}>
@@ -1446,6 +1630,93 @@ export default function Members() {
               title="Members"
             />
           )}
+
+          <Modal
+            open={importModalOpen}
+            title="Import Members Preview"
+            maxWidth="max-w-7xl"
+            onClose={() => {
+              setImportModalOpen(false);
+              setImportRows([]);
+              setImportSummary({ total: 0, valid: 0, invalid: 0, duplicates: 0 });
+            }}
+            footer={(
+              <>
+                <Button variant="secondary" onClick={() => {
+                  setImportModalOpen(false);
+                  setImportRows([]);
+                  setImportSummary({ total: 0, valid: 0, invalid: 0, duplicates: 0 });
+                }}>
+                  Cancel
+                </Button>
+                <Button onClick={importValidMembers} disabled={!importRows.some((row) => row.isValid) || isImporting}>
+                  Import Valid Members
+                </Button>
+              </>
+            )}
+          >
+            <div className="space-y-4">
+              <div className="grid gap-3 sm:grid-cols-4">
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-900">
+                  <p className="text-xs font-bold uppercase text-slate-500">Total Rows</p>
+                  <p className="text-2xl font-black text-slate-950 dark:text-white">{importSummary.total}</p>
+                </div>
+                <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 dark:border-emerald-500/20 dark:bg-emerald-500/10">
+                  <p className="text-xs font-bold uppercase text-emerald-700 dark:text-emerald-200">Valid</p>
+                  <p className="text-2xl font-black text-emerald-800 dark:text-emerald-100">{importSummary.valid}</p>
+                </div>
+                <div className="rounded-xl border border-rose-200 bg-rose-50 p-3 dark:border-rose-500/20 dark:bg-rose-500/10">
+                  <p className="text-xs font-bold uppercase text-rose-700 dark:text-rose-200">Invalid</p>
+                  <p className="text-2xl font-black text-rose-800 dark:text-rose-100">{importSummary.invalid}</p>
+                </div>
+                <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 dark:border-amber-500/20 dark:bg-amber-500/10">
+                  <p className="text-xs font-bold uppercase text-amber-700 dark:text-amber-200">Duplicates</p>
+                  <p className="text-2xl font-black text-amber-800 dark:text-amber-100">{importSummary.duplicates}</p>
+                </div>
+              </div>
+
+              <div className="overflow-x-auto rounded-2xl border border-slate-200 dark:border-slate-800">
+                <table className="min-w-full text-left text-sm">
+                  <thead className="bg-slate-50 text-xs uppercase text-slate-500 dark:bg-slate-900 dark:text-slate-400">
+                    <tr>
+                      <th className="px-4 py-3">CIFK Number</th>
+                      <th className="px-4 py-3">Member</th>
+                      <th className="px-4 py-3">Barangay / Municipality</th>
+                      <th className="px-4 py-3">Savings</th>
+                      <th className="px-4 py-3">Contact</th>
+                      <th className="px-4 py-3">Last Contribution Date</th>
+                      <th className="px-4 py-3">Status</th>
+                      <th className="px-4 py-3">Validation</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                    {importRows.map((row) => (
+                      <tr
+                        key={`${row.rowNumber}-${row.cifNumber || row.member || ''}`}
+                        className={row.statusTone === 'invalid' ? 'bg-rose-50/60 dark:bg-rose-500/10' : row.statusTone === 'warning' ? 'bg-amber-50/60 dark:bg-amber-500/10' : ''}
+                      >
+                        <td className="px-4 py-3 whitespace-nowrap">{row.cifNumber || 'Will generate'}</td>
+                        <td className="px-4 py-3 whitespace-nowrap font-semibold">{row.member || 'Missing member name'}</td>
+                        <td className="px-4 py-3">{row.barangay || '—'}</td>
+                        <td className="px-4 py-3 whitespace-nowrap">{row.savings ? Number(String(row.savings).replace(/,/g, '')).toLocaleString('en-PH') : '0'}</td>
+                        <td className="px-4 py-3 whitespace-nowrap">{row.contact || '—'}</td>
+                        <td className="px-4 py-3 whitespace-nowrap">{row.lastContributionDate ? formatDate(row.lastContributionDate) : '—'}</td>
+                        <td className="px-4 py-3 whitespace-nowrap">{row.normalized?.status || 'Active'}</td>
+                        <td className="px-4 py-3">
+                          <div className="flex flex-col gap-1">
+                            <Badge tone={row.statusTone === 'valid' ? 'success' : row.statusTone === 'warning' ? 'warning' : 'danger'}>
+                              {row.statusTone === 'valid' ? 'Valid' : row.statusTone === 'warning' ? 'Warning' : 'Invalid'}
+                            </Badge>
+                            <p className="text-xs text-slate-500 dark:text-slate-400">{row.validation}</p>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </Modal>
 
           <Modal
             open={modalOpen}

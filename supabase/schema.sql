@@ -621,6 +621,7 @@ create table if not exists public.members (
 alter table public.members add column if not exists suffix_name text;
 alter table public.members add column if not exists religion_other text;
 alter table public.members add column if not exists share_capital numeric(14,2) not null default 0;
+alter table public.members add column if not exists last_contribution_date date;
 alter table public.members add column if not exists last_share_capital_deposit_date date;
 alter table public.members add column if not exists benefit_category text;
 
