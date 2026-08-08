@@ -622,6 +622,7 @@ declare
   approval_date_value date;
   share_capital_value numeric(14,2);
   import_order_value integer;
+  fallback_date date := current_date;
 begin
   source_identity := coalesce(
     nullif(trim(payload->>'id'), ''),
@@ -696,7 +697,8 @@ begin
       payload->'metadata'->>'membershipDate',
       payload->'metadata'->>'Membership Date',
       payload->'metadata'->>'dateJoined'
-    ))
+    )),
+    fallback_date
   );
   birthdate_value := case
     when nullif(trim(payload->>'birthdate'), '') is null then null
@@ -790,7 +792,7 @@ begin
     'branch', coalesce(nullif(trim(payload->>'branch'), ''), 'Main Office'),
     'import_order', import_order_value,
     'share_capital', share_capital_value,
-    'last_share_capital_deposit_date', public.parse_import_date(coalesce(
+    'last_share_capital_deposit_date', coalesce(public.parse_import_date(coalesce(
       payload->>'lastShareCapitalDepositDate',
       payload->>'Last Share Capital Deposit Date',
       payload->>'LastContributionDate',
@@ -799,7 +801,7 @@ begin
       payload->>'Membership Date',
       payload->>'membershipDate',
       payload->>'dateJoined'
-    )),
+    )), fallback_date),
     'benefit_category', coalesce(nullif(trim(payload->>'benefitCategory'), ''), nullif(trim(payload->>'benefit_category'), ''), nullif(trim(payload->>'Benefit Category'), '')),
     'beneficiaries', coalesce(payload->'beneficiaries', '[]'::jsonb),
     'photo', coalesce(nullif(trim(payload->>'photo'), ''), nullif(trim(payload->>'Photo'), '')),
@@ -836,7 +838,7 @@ create table if not exists public.members (
   religion_other text,
   dependents integer not null default 0,
   savings_account_no text,
-  last_contribution_date date,
+  last_contribution_date date not null default current_date,
   signed_date date,
   witness_staff text,
   action_taken text,
@@ -865,6 +867,7 @@ alter table public.members add column if not exists last_share_capital_deposit_d
 alter table public.members add column if not exists benefit_category text;
 alter table public.members add column if not exists import_order integer;
 alter table public.members add column if not exists import_key text;
+alter table public.members alter column last_contribution_date set default current_date;
 
 update public.members
 set import_key = coalesce(
@@ -941,7 +944,7 @@ create table if not exists public.requests (
   religion_other text,
   dependents integer not null default 0,
   savings_account_no text,
-  last_contribution_date date,
+  last_contribution_date date not null default current_date,
   signed_date date,
   witness_staff text,
   action_taken text,
@@ -969,6 +972,7 @@ alter table public.requests
 alter table public.requests add column if not exists request_type text not null default 'Member Request';
 alter table public.requests add column if not exists request_kind text;
 alter table public.requests add column if not exists approval_queue text;
+alter table public.requests add column if not exists last_contribution_date date not null default current_date;
 
 create table if not exists public.share_capital_transactions (
   id text primary key,
@@ -991,7 +995,7 @@ create table if not exists public.member_status_history (
   member_reference text,
   previous_status text not null,
   new_status text not null,
-  last_contribution_date date,
+  last_contribution_date date not null default current_date,
   status_change_date date not null default current_date,
   reason text not null,
   metadata jsonb not null default '{}'::jsonb,

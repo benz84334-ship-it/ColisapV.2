@@ -201,6 +201,10 @@ function toNumberOrNull(value) {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+function todayIso() {
+  return new Date().toISOString().slice(0, 10);
+}
+
 function toDateOrNull(value) {
   if (value === '' || value === null || value === undefined) return null;
   if (value instanceof Date && !Number.isNaN(value.getTime())) {
@@ -408,7 +412,7 @@ const TABLE_SYNCERS = {
       religion_other: item.religionOther ?? null,
       dependents: toNumberOrZero(item.dependents),
       savings_account_no: item.savingsAccountNo ?? null,
-      last_contribution_date: toDateOrNull(item.lastContributionDate ?? item.membershipDate),
+      last_contribution_date: toDateOrNull(item.lastContributionDate ?? item.membershipDate) || todayIso(),
       signed_date: toDateOrNull(item.signedDate),
       witness_staff: item.witnessStaff ?? null,
       action_taken: item.actionTaken ?? null,
@@ -547,7 +551,7 @@ const TABLE_SYNCERS = {
       religion_other: item.religionOther ?? null,
       dependents: item.dependents ?? 0,
       savings_account_no: item.savingsAccountNo ?? null,
-      last_contribution_date: toDateOrNull(item.lastContributionDate ?? item.membershipDate),
+      last_contribution_date: toDateOrNull(item.lastContributionDate ?? item.membershipDate) || todayIso(),
       signed_date: toDateOrNull(item.signedDate),
       witness_staff: item.witnessStaff ?? null,
       action_taken: item.actionTaken ?? null,

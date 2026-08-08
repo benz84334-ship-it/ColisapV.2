@@ -117,7 +117,7 @@ function normalizeImportedDate(value) {
     return excelSerialToIso(value);
   }
   const text = normalizeImportText(value);
-  if (!text) return '';
+  if (!text || text.toLowerCase() === 'not set') return '';
   const serialMatch = text.match(/^\d+(\.\d+)?$/);
   if (serialMatch) {
     return excelSerialToIso(Number(text));
@@ -1227,13 +1227,13 @@ export default function Members() {
         __rowNumber: rowNumber,
         __sourceRow: rowNumber,
       }, row.cifNumber || '');
-      const contributionDate =
-        row.lastContributionDate
-        || row.normalized?.lastContributionDate
-        || getImportedContributionDate(row.raw)
-        || member.lastContributionDate
-        || member.membershipDate
-        || '';
+  const contributionDate =
+    row.lastContributionDate
+    || row.normalized?.lastContributionDate
+    || getImportedContributionDate(row.raw)
+    || member.lastContributionDate
+    || member.membershipDate
+    || todayIso();
       return {
         ...member,
         cifNumber: row.cifNumber || member.cifNumber,
@@ -1243,8 +1243,8 @@ export default function Members() {
         barangay: row.barangay || member.barangay,
         shareCapital: normalizeImportedNumber(row.savings),
         contactNumber: row.contact || member.contactNumber,
-        lastContributionDate: contributionDate || member.lastContributionDate || member.membershipDate,
-        membershipDate: contributionDate || member.membershipDate || member.lastContributionDate,
+        lastContributionDate: contributionDate || member.lastContributionDate || member.membershipDate || todayIso(),
+        membershipDate: contributionDate || member.membershipDate || member.lastContributionDate || todayIso(),
         status: row.normalized.status,
         metadata: {
           ...(member.metadata || {}),
