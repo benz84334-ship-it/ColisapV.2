@@ -394,15 +394,20 @@ declare
   first_name text;
   last_name text;
   full_name text;
+  middle_name text;
   address_text text;
   barangay_text text;
   contact_text text;
   last_contribution_date_value date;
+  birthdate_value date;
+  signed_date_value date;
+  approval_date_value date;
   share_capital_value numeric(14,2);
 begin
   first_name := coalesce(nullif(trim(payload->>'firstName'), ''), nullif(trim(payload->>'first_name'), ''), nullif(trim(payload->>'first_name'), ''), nullif(trim(payload->>'First Name'), ''), nullif(trim(payload->>'First name'), ''));
   last_name := coalesce(nullif(trim(payload->>'lastName'), ''), nullif(trim(payload->>'last_name'), ''), nullif(trim(payload->>'Last Name'), ''), nullif(trim(payload->>'Last name'), ''));
   full_name := coalesce(nullif(trim(payload->>'fullName'), ''), nullif(trim(payload->>'full_name'), ''), nullif(trim(payload->>'Member Name'), ''), nullif(trim(payload->>'member name'), ''));
+  middle_name := coalesce(nullif(trim(payload->>'middleName'), ''), nullif(trim(payload->>'middle_name'), ''), nullif(trim(payload->>'Middle Name'), ''), nullif(trim(payload->>'Middle name'), ''));
   address_text := coalesce(nullif(trim(payload->>'address'), ''), nullif(trim(payload->>'Address'), ''), nullif(trim(payload->>'Home Address'), ''));
   barangay_text := coalesce(nullif(trim(payload->>'barangay'), ''), nullif(trim(payload->>'Barangay'), ''), nullif(trim(payload->>'Barangay / Municipality'), ''), nullif(trim(payload->>'Municipality'), ''));
   contact_text := coalesce(nullif(trim(payload->>'contactNumber'), ''), nullif(trim(payload->>'contact_number'), ''), nullif(trim(payload->>'Contact Number'), ''), nullif(trim(payload->>'Mobile Number'), ''), nullif(trim(payload->>'Phone Number'), ''));
@@ -414,6 +419,21 @@ begin
       end
     else (trim(payload->>'lastContributionDate'))::date
   end;
+  birthdate_value := case
+    when nullif(trim(payload->>'birthdate'), '') is null then null
+    when trim(payload->>'birthdate') ~ '^\d+(\.\d+)?$' then (date '1899-12-30' + (trim(payload->>'birthdate'))::numeric::integer)
+    else (trim(payload->>'birthdate'))::date
+  end;
+  signed_date_value := case
+    when nullif(trim(payload->>'signedDate'), '') is null then null
+    when trim(payload->>'signedDate') ~ '^\d+(\.\d+)?$' then (date '1899-12-30' + (trim(payload->>'signedDate'))::numeric::integer)
+    else (trim(payload->>'signedDate'))::date
+  end;
+  approval_date_value := case
+    when nullif(trim(payload->>'approvalDate'), '') is null then null
+    when trim(payload->>'approvalDate') ~ '^\d+(\.\d+)?$' then (date '1899-12-30' + (trim(payload->>'approvalDate'))::numeric::integer)
+    else (trim(payload->>'approvalDate'))::date
+  end;
   share_capital_value := case
     when nullif(trim(payload->>'shareCapital'), '') is null then 0
     else (trim(payload->>'shareCapital'))::numeric(14,2)
@@ -424,13 +444,13 @@ begin
     'cif_number', coalesce(nullif(trim(payload->>'cifNumber'), ''), nullif(trim(payload->>'cif_number'), '')),
     'application_status', coalesce(nullif(trim(payload->>'applicationStatus'), ''), 'New'),
     'first_name', first_name,
-    'middle_name', coalesce(nullif(trim(payload->>'middleName'), ''), nullif(trim(payload->>'middle_name'), '')),
+    'middle_name', middle_name,
     'last_name', last_name,
     'suffix_name', coalesce(nullif(trim(payload->>'suffixName'), ''), nullif(trim(payload->>'suffix_name'), '')),
-    'full_name', coalesce(full_name, concat_ws(' ', first_name, last_name)),
+    'full_name', coalesce(full_name, concat_ws(' ', first_name, middle_name, last_name), concat_ws(' ', first_name, last_name), 'Imported Member'),
     'address', address_text,
     'barangay', barangay_text,
-    'birthdate', case when nullif(trim(payload->>'birthdate'), '') is null then null else (trim(payload->>'birthdate'))::date end,
+    'birthdate', birthdate_value,
     'age_years', case when nullif(trim(payload->>'ageYears'), '') is null then null else (trim(payload->>'ageYears'))::integer end,
     'age_months', case when nullif(trim(payload->>'ageMonths'), '') is null then null else (trim(payload->>'ageMonths'))::integer end,
     'gender', coalesce(nullif(trim(payload->>'gender'), ''), nullif(trim(payload->>'Gender'), '')),
@@ -444,11 +464,11 @@ begin
     'dependents', case when nullif(trim(payload->>'dependents'), '') is null then 0 else (trim(payload->>'dependents'))::integer end,
     'savings_account_no', coalesce(nullif(trim(payload->>'savingsAccountNo'), ''), nullif(trim(payload->>'savings_account_no'), '')),
     'last_contribution_date', last_contribution_date_value,
-    'signed_date', case when nullif(trim(payload->>'signedDate'), '') is null then null else (trim(payload->>'signedDate'))::date end,
+    'signed_date', signed_date_value,
     'witness_staff', coalesce(nullif(trim(payload->>'witnessStaff'), ''), nullif(trim(payload->>'witness_staff'), '')),
     'action_taken', coalesce(nullif(trim(payload->>'actionTaken'), ''), 'Pending'),
     'approving_authority', coalesce(nullif(trim(payload->>'approvingAuthority'), ''), nullif(trim(payload->>'approving_authority'), '')),
-    'approval_date', case when nullif(trim(payload->>'approvalDate'), '') is null then null else (trim(payload->>'approvalDate'))::date end,
+    'approval_date', approval_date_value,
     'findings', coalesce(nullif(trim(payload->>'findings'), ''), nullif(trim(payload->>'Findings'), '')),
     'status', coalesce(nullif(trim(payload->>'status'), ''), 'Pending'),
     'branch', coalesce(nullif(trim(payload->>'branch'), ''), 'Main Office'),

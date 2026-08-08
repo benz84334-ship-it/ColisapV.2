@@ -69,9 +69,13 @@ function normalizeImportText(value) {
   return String(value ?? '').replace(/\s+/g, ' ').trim();
 }
 
+function normalizeImportKey(value) {
+  return String(value ?? '').toLowerCase().replace(/[^a-z0-9]+/g, '');
+}
+
 function pickImportValue(row = {}, keys = []) {
   const lookup = Object.entries(row).reduce((accumulator, [key, value]) => {
-    accumulator[String(key).toLowerCase().replace(/[^a-z0-9]+/g, '')] = value;
+    accumulator[normalizeImportKey(key)] = value;
     return accumulator;
   }, {});
 
@@ -84,39 +88,123 @@ function pickImportValue(row = {}, keys = []) {
   return '';
 }
 
-function mapImportedMemberRow(row = {}, generatedCifNumber = '') {
-  const firstName = normalizeImportText(pickImportValue(row, ['firstName', 'First Name', 'first_name']));
-  const middleName = normalizeImportText(pickImportValue(row, ['middleName', 'Middle Name', 'middle_name']));
-  const lastName = normalizeImportText(pickImportValue(row, ['lastName', 'Last Name', 'last_name']));
-  const fullName = normalizeImportText(pickImportValue(row, ['fullName', 'Full Name', 'Member Name', 'name']))
-    || [firstName, middleName, lastName].filter(Boolean).join(' ');
+function excelSerialToIso(value) {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return '';
+  const utcDays = Math.floor(value - 25569);
+  const utcValue = utcDays * 86400;
+  const fractional = Math.round((value - Math.floor(value)) * 86400);
+  const date = new Date((utcValue + fractional) * 1000);
+  if (Number.isNaN(date.getTime())) return '';
+  return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+}
+
+function normalizeImportedDate(value) {
+  if (value === null || value === undefined || value === '') return '';
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return new Date(value.getTime() - value.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+  }
+  if (typeof value === 'number') {
+    return excelSerialToIso(value);
+  }
+  const text = normalizeImportText(value);
+  if (!text) return '';
+  if (/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(text)) {
+    const [month, day, year] = text.split('/').map(Number);
+    const parsed = new Date(year, month - 1, day);
+    if (!Number.isNaN(parsed.getTime())) {
+      return new Date(parsed.getTime() - parsed.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+    }
+  }
+  const parsed = new Date(text);
+  if (!Number.isNaN(parsed.getTime())) {
+    return new Date(parsed.getTime() - parsed.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+  }
+  return text;
+}
+
+function normalizeImportedNumber(value) {
+  if (value === null || value === undefined || value === '') return 0;
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  const text = normalizeImportText(value).replace(/,/g, '');
+  const parsed = Number(text);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function splitFullName(fullName = '') {
+  const parts = normalizeImportText(fullName).split(' ').filter(Boolean);
+  if (!parts.length) {
+    return { firstName: '', middleName: '', lastName: '' };
+  }
+
+  if (parts.length === 1) {
+    return { firstName: parts[0], middleName: '', lastName: '' };
+  }
+
+  if (parts.length === 2) {
+    return { firstName: parts[0], middleName: '', lastName: parts[1] };
+  }
+
   return {
-    memberId: generatedCifNumber || '',
-    cifNumber: generatedCifNumber || '',
+    firstName: parts[0],
+    middleName: parts.slice(1, -1).join(' '),
+    lastName: parts[parts.length - 1],
+  };
+}
+
+function mapImportedMemberRow(row = {}, generatedCifNumber = '') {
+  const fullName = normalizeImportText(pickImportValue(row, [
+    'fullName',
+    'Full Name',
+    'Fullname',
+    'Member Name',
+    'Member',
+    'Member full name',
+    'Name',
+    'Applicant Name',
+    'Name of Member',
+    'name',
+    'membername',
+  ]));
+  const sheetCifNumber = normalizeImportText(pickImportValue(row, [
+    'cifNumber',
+    'CIFK Number',
+    'CIFK No.',
+    'CIFK No',
+    'CIFK',
+    'Member ID',
+    'Member No.',
+    'Member No',
+  ]));
+  const firstName = normalizeImportText(pickImportValue(row, ['firstName', 'First Name', 'First name', 'Firstname', 'firstname', 'first_name', 'first'])) || splitFullName(fullName).firstName;
+  const middleName = normalizeImportText(pickImportValue(row, ['middleName', 'Middle Name', 'Middle name', 'Middlename', 'middlename', 'middle_name', 'middle'])) || splitFullName(fullName).middleName;
+  const lastName = normalizeImportText(pickImportValue(row, ['lastName', 'Last Name', 'Last name', 'Lastname', 'lastname', 'last_name', 'last'])) || splitFullName(fullName).lastName;
+  return {
+    memberId: sheetCifNumber || generatedCifNumber || '',
+    cifNumber: sheetCifNumber || generatedCifNumber || '',
     applicationStatus: 'New',
     benefitCategory: MEMBER_BENEFIT_CATEGORIES[0],
     firstName,
     middleName,
     lastName,
     fullName,
-    address: normalizeImportText(pickImportValue(row, ['address', 'Address', 'Present Address', 'Home Address'])),
-    barangay: normalizeImportText(pickImportValue(row, ['barangay', 'Barangay', 'Municipality', 'Barangay / Municipality'])),
-    birthdate: normalizeImportText(pickImportValue(row, ['birthdate', 'Date of Birth', 'Birth Date'])) || '',
+    address: normalizeImportText(pickImportValue(row, ['address', 'Address', 'Present Address', 'Home Address', 'homeaddress'])),
+    barangay: normalizeImportText(pickImportValue(row, ['barangay', 'Barangay', 'Municipality', 'Barangay / Municipality', 'brgy'])),
+    birthdate: normalizeImportedDate(pickImportValue(row, ['birthdate', 'Date of Birth', 'Birth Date', 'dateofbirth', 'DOB', 'Date of birth'])) || '',
     ageYears: '',
     ageMonths: '',
-    gender: normalizeImportText(pickImportValue(row, ['gender', 'Sex'])),
-    civilStatus: normalizeImportText(pickImportValue(row, ['civilStatus', 'Civil Status', 'civil_status'])),
-    contactNumber: normalizeImportText(pickImportValue(row, ['contactNumber', 'Contact Number', 'Contact No.', 'Mobile Number', 'Phone Number'])),
-    occupation: normalizeImportText(pickImportValue(row, ['occupation', 'Occupation'])),
+    gender: normalizeImportText(pickImportValue(row, ['gender', 'Gender', 'Sex', 'sex'])),
+    civilStatus: normalizeImportText(pickImportValue(row, ['civilStatus', 'Civil Status', 'civil_status', 'civilstatus'])),
+    contactNumber: normalizeImportText(pickImportValue(row, ['contactNumber', 'Contact', 'Contact Number', 'Contact No.', 'Contact No', 'Mobile Number', 'Phone Number', 'Mobile No.'])),
+    occupation: normalizeImportText(pickImportValue(row, ['occupation', 'Occupation', 'job'])),
     employer: normalizeImportText(pickImportValue(row, ['employer', 'Employer'])),
-    officeAddress: normalizeImportText(pickImportValue(row, ['officeAddress', 'Office Address', 'office_address'])),
+    officeAddress: normalizeImportText(pickImportValue(row, ['officeAddress', 'Office Address', 'office_address', 'office'])),
     religion: normalizeImportText(pickImportValue(row, ['religion', 'Religion'])),
     religionOther: '',
     dependents: 0,
     beneficiaries: [],
-    savingsAccountNo: normalizeImportText(pickImportValue(row, ['savingsAccountNo', 'Savings Account No.', 'savings_account_no'])),
-    membershipDate: normalizeImportText(pickImportValue(row, ['membershipDate', 'Membership Date', 'lastContributionDate', 'Last Contribution Date'])) || todayIso(),
-    signedDate: todayIso(),
+    savingsAccountNo: normalizeImportText(pickImportValue(row, ['savingsAccountNo', 'Savings Account No.', 'Savings Account No', 'savings_account_no'])),
+    membershipDate: normalizeImportedDate(pickImportValue(row, ['membershipDate', 'Membership Date', 'lastContributionDate', 'Last Contribution Date', 'last contribution date', 'Date Joined', 'Membership date'])) || todayIso(),
+    signedDate: normalizeImportedDate(pickImportValue(row, ['signedDate', 'Signed Date'])) || todayIso(),
     witnessStaff: normalizeImportText(pickImportValue(row, ['witnessStaff', 'Witness / BMPC Staff'])),
     actionTaken: 'Pending',
     approvingAuthority: '',
@@ -124,8 +212,8 @@ function mapImportedMemberRow(row = {}, generatedCifNumber = '') {
     findings: '',
     status: normalizeImportText(pickImportValue(row, ['status', 'Member Status'])) || 'Active',
     photo: '',
-    shareCapital: 0,
-    lastShareCapitalDepositDate: todayIso(),
+    shareCapital: normalizeImportedNumber(pickImportValue(row, ['shareCapital', 'Savings', 'Saving', 'Savings Amount', 'Amount Saved', 'share_capital'])),
+    lastShareCapitalDepositDate: normalizeImportedDate(pickImportValue(row, ['lastShareCapitalDepositDate', 'Last Share Capital Deposit Date', 'last contribution date', 'Last Contribution Date', 'Membership Date', 'membershipDate'])) || normalizeImportedDate(pickImportValue(row, ['membershipDate', 'Membership Date', 'lastContributionDate', 'Last Contribution Date', 'last contribution date', 'Date Joined', 'Membership date'])) || todayIso(),
     branch: 'Main Office',
     metadata: {
       importedFrom: 'excel',
@@ -866,13 +954,21 @@ export default function Members() {
 
   const handleImportedMembers = (rows = []) => {
     const parsedRows = Array.isArray(rows) ? rows : [];
-    const importedMembers = parsedRows
-      .filter((row) => Object.values(row || {}).some((value) => String(value ?? '').trim() !== ''))
-      .map((row, index) => {
-        const generatedCifNumber = nextCifNumber([...(scopedData.members || [])], todayIso());
-        return mapImportedMemberRow(row, generatedCifNumber || `CIFK-${String(new Date().getFullYear())}-${String(index + 1).padStart(5, '0')}`);
-      })
-      .filter((member) => member.fullName || member.firstName || member.lastName || member.address || member.contactNumber);
+  const importedMembers = parsedRows
+    .filter((row) => Object.values(row || {}).some((value) => String(value ?? '').trim() !== ''))
+    .map((row, index) => {
+      const rowSpecificFallback = `CIFK-${String(new Date().getFullYear())}-${String((row.__rowNumber || index + 1)).padStart(5, '0')}`;
+      const member = mapImportedMemberRow(row, rowSpecificFallback);
+      const fallbackName = [member.firstName, member.middleName, member.lastName].filter(Boolean).join(' ').trim()
+        || normalizeImportText(pickImportValue(row, ['name', 'fullName', 'Full Name', 'Member Name']))
+        || `Imported Member ${index + 1}`;
+        return {
+          ...member,
+          fullName: member.fullName || fallbackName,
+          firstName: member.firstName || fallbackName.split(' ')[0] || '',
+          lastName: member.lastName || fallbackName.split(' ').slice(1).join(' ') || '',
+        };
+      });
 
     if (!importedMembers.length) {
       showToast('No member rows were found in the selected file.', 'error');
@@ -1015,6 +1111,7 @@ export default function Members() {
           )}
           <FormField className="md:col-span-2" disabled={isRequestApprovalPage} label="No. of Dependents" min="0" step="1" type="number" value={currentForm.dependents} onChange={(event) => (requestTarget ? setReturnedDraft((current) => ({ ...current, dependents: Number(event.target.value) })) : setForm((current) => ({ ...current, dependents: Number(event.target.value) })))} />
           <FormField className="md:col-span-4" disabled={isRequestApprovalPage} label="Office Address" value={currentForm.officeAddress} onChange={(event) => (requestTarget ? setReturnedDraft((current) => ({ ...current, officeAddress: event.target.value })) : setForm((current) => ({ ...current, officeAddress: event.target.value })))} />
+          <FormField className="md:col-span-2" disabled={isRequestApprovalPage} label="Savings" min="0" step="0.01" type="number" value={currentForm.shareCapital ?? ''} onChange={(event) => (requestTarget ? setReturnedDraft((current) => ({ ...current, shareCapital: event.target.value === '' ? '' : Number(event.target.value) })) : setForm((current) => ({ ...current, shareCapital: event.target.value === '' ? '' : Number(event.target.value) })))} />
           {isRequestApprovalPage ? (
             <div className="md:col-span-2">
               <p className="mb-1.5 text-sm font-semibold text-slate-700 dark:text-slate-200">Member Photo</p>

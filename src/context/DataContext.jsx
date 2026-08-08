@@ -97,6 +97,18 @@ function nextRandomCifNumber(members = [], date = new Date()) {
   return `CIFK-${year}-${suffix}`;
 }
 
+function isDuplicateMemberId(members = [], value = '') {
+  const candidate = String(value || '').trim();
+  if (!candidate) return false;
+  return members.some((member) => String(member.memberId || '').trim() === candidate || String(member.id || '').trim() === candidate);
+}
+
+function isDuplicateCifNumber(members = [], value = '') {
+  const candidate = String(value || '').trim();
+  if (!candidate) return false;
+  return members.some((member) => String(member.cifNumber || '').trim() === candidate || String(member.memberId || '').trim() === candidate);
+}
+
 function placeholderPhoto() {
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="240" height="240" viewBox="0 0 240 240">
     <rect width="240" height="240" rx="36" fill="#e2e8f0"/>
@@ -501,7 +513,12 @@ export function DataProvider({ children }) {
     (member, user) => {
       const currentMembers = database.members || [];
       const generatedMemberRowId = nextMemberRowId(currentMembers);
-      const nextMemberIdCode = member.memberId || nextMemberId(currentMembers, member.membershipDate || todayIso());
+      const nextMemberIdCode = isDuplicateMemberId(currentMembers, member.memberId)
+        ? nextMemberId(currentMembers, member.membershipDate || todayIso())
+        : (member.memberId || nextMemberId(currentMembers, member.membershipDate || todayIso()));
+      const nextCifCode = isDuplicateCifNumber(currentMembers, member.cifNumber)
+        ? nextCifNumber(currentMembers, member.membershipDate || todayIso())
+        : (member.cifNumber || nextCifNumber(currentMembers, member.membershipDate || todayIso()));
       const nextBeneficiaries = normalizeBeneficiaries(member.beneficiaries).map((beneficiary, index) => ({
         ...beneficiary,
         memberId: generatedMemberRowId,
@@ -513,7 +530,7 @@ export function DataProvider({ children }) {
           branch: member.branch || getActorBranch(database.users, user),
           id: generatedMemberRowId,
           memberId: nextMemberIdCode,
-          cifNumber: member.cifNumber || nextCifNumber(members),
+          cifNumber: nextCifCode,
           photo: member.photo || avatarForName(member.fullName),
           lastShareCapitalDepositDate: member.lastShareCapitalDepositDate || todayIso(),
           beneficiaries: nextBeneficiaries,
