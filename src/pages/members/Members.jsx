@@ -179,6 +179,14 @@ function mapImportedMemberRow(row = {}, generatedCifNumber = '') {
   const middleName = normalizeImportText(pickImportValue(row, ['middleName', 'Middle Name', 'Middle name', 'Middlename', 'middlename', 'middle_name', 'middle'])) || splitFullName(fullName).middleName;
   const lastName = normalizeImportText(pickImportValue(row, ['lastName', 'Last Name', 'Last name', 'Lastname', 'lastname', 'last_name', 'last'])) || splitFullName(fullName).lastName;
   const importName = fullName || [firstName, middleName, lastName].filter(Boolean).join(' ').trim();
+  const sourceRow = Number(row.__rowNumber || row.__sourceRow || 0);
+  const sourceIdentity = [
+    sourceRow || '',
+    sheetCifNumber || '',
+    fullName || '',
+    firstName || '',
+    lastName || '',
+  ].filter(Boolean).join('|');
   return {
     memberId: sheetCifNumber || generatedCifNumber || '',
     cifNumber: sheetCifNumber || generatedCifNumber || '',
@@ -219,6 +227,9 @@ function mapImportedMemberRow(row = {}, generatedCifNumber = '') {
     metadata: {
       importedFrom: 'excel',
       importedAt: new Date().toISOString(),
+      sourceRow: sourceRow || null,
+      sourceSheetRow: sourceRow || null,
+      sourceIdentity,
     },
   };
 }
@@ -963,7 +974,11 @@ export default function Members() {
       .map(({ row, index }) => {
         const rowNumber = Number(row.__rowNumber || row.__sourceRow || index + 1);
         const rowSpecificFallback = `CIFK-${String(new Date().getFullYear())}-${String(rowNumber).padStart(5, '0')}`;
-        const member = mapImportedMemberRow(row, rowSpecificFallback);
+        const member = mapImportedMemberRow({
+          ...row,
+          __rowNumber: rowNumber,
+          __sourceRow: row.__sourceRow || rowNumber,
+        }, rowSpecificFallback);
         const nextMemberId = member.memberId && !seenImportIds.has(member.memberId)
           ? member.memberId
           : rowSpecificFallback;
@@ -990,6 +1005,7 @@ export default function Members() {
             ...(member.metadata || {}),
             sourceRow: rowNumber,
             sourceSheetRow: row.__sourceRow || row.__rowNumber || rowNumber,
+            importKey: `${rowNumber}-${nextMemberId}-${nextCifNumber}`,
           },
         };
       });

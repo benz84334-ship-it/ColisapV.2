@@ -59,6 +59,9 @@ drop function if exists public.generate_member_row_id();
 drop function if exists public.generate_cifk_member_number_safe();
 drop function if exists public.generate_cifk_member_number();
 
+create sequence if not exists public.member_import_row_seq;
+create sequence if not exists public.member_import_cif_seq;
+
 create or replace function public.generate_cifk_member_number_safe()
 returns text
 language plpgsql
@@ -212,19 +215,33 @@ language plpgsql
 security definer
 set search_path = public
 as $$
+declare
+  current_year text := to_char(current_date, 'YYYY');
+  next_row_seq bigint;
+  next_cif_seq bigint;
 begin
+  if coalesce(new.id, '') = '' or exists (
+    select 1 from public.members where id = new.id
+  ) then
+    next_row_seq := nextval('public.member_import_row_seq');
+    new.id := 'MEM-' || current_year || '-' || lpad(next_row_seq::text, 5, '0');
+  end if;
+
   if coalesce(new.member_id, '') = '' or exists (
     select 1 from public.members where id = new.member_id or member_id = new.member_id
   ) then
-    new.member_id := public.generate_member_row_id_safe();
+    next_row_seq := nextval('public.member_import_row_seq');
+    new.member_id := 'M-' || current_year || '-' || lpad(next_row_seq::text, 5, '0');
   end if;
 
   if coalesce(new.cif_number, '') = '' then
-    new.cif_number := public.generate_cifk_member_number_safe();
+    next_cif_seq := nextval('public.member_import_cif_seq');
+    new.cif_number := 'CIFK-' || current_year || '-' || lpad(next_cif_seq::text, 5, '0');
   elsif exists (
     select 1 from public.members where cif_number = new.cif_number or member_id = new.cif_number
   ) then
-    new.cif_number := public.generate_cifk_member_number_safe();
+    next_cif_seq := nextval('public.member_import_cif_seq');
+    new.cif_number := 'CIFK-' || current_year || '-' || lpad(next_cif_seq::text, 5, '0');
   end if;
 
   return new;

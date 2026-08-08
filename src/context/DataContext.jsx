@@ -549,6 +549,7 @@ export function DataProvider({ children }) {
     (membersToCreate = [], user) => {
       const incoming = Array.isArray(membersToCreate) ? membersToCreate.filter(Boolean) : [];
       if (!incoming.length) return;
+      let finalMembersSnapshot = [];
 
       updateKey('members', (members = []) => {
         const existingMembers = Array.isArray(members) ? members : [];
@@ -582,7 +583,13 @@ export function DataProvider({ children }) {
           nextMembers.unshift({ ...nextMember, status: getComputedMemberStatus(nextMember, database.loans) });
         });
 
+        finalMembersSnapshot = nextMembers;
         return nextMembers;
+      });
+
+      saveSupabaseKey('members', finalMembersSnapshot).catch((error) => {
+        console.error(error);
+        setDatabaseError(error.message || 'Unable to sync imported members to Supabase. Changes saved locally.');
       });
 
       addActivity('Imported Members', `${incoming.length} members were imported into member records.`, user);
