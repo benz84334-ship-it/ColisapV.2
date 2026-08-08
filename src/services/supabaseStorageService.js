@@ -257,6 +257,21 @@ function dedupeRequestRows(rows = []) {
   });
 }
 
+function dedupeMemberRows(rows = []) {
+  const seen = new Set();
+  return rows.filter((row) => {
+    const key = [
+      String(row?.id || '').trim(),
+      String(row?.member_id || '').trim(),
+      String(row?.cif_number || '').trim(),
+    ].find((value) => value) || '';
+    if (!key) return true;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 const TABLE_SYNCERS = {
   users: {
     table: 'users',
@@ -949,7 +964,11 @@ async function syncTableSlice(key, value) {
   }
   const filteredRows = rows.filter(Boolean);
   const mapped = filteredRows.map((row, index) => syncer.toRow(row, index));
-  const finalRows = syncer.table === 'requests' ? dedupeRequestRows(mapped) : mapped;
+  const finalRows = syncer.table === 'requests'
+    ? dedupeRequestRows(mapped)
+    : syncer.table === 'members'
+      ? dedupeMemberRows(mapped)
+      : mapped;
   const { error } = await supabase.from(syncer.table).upsert(finalRows, { onConflict: 'id' });
   if (error) throw error;
 }
@@ -1045,6 +1064,9 @@ export async function loadDatabaseFromSupabase() {
       ...member,
       beneficiaries: beneficiariesByMember.get(String(member.id || '').trim()) || member.beneficiaries || [],
     }));
+  }
+  if (Array.isArray(nextDatabase.members) && nextDatabase.members.length) {
+    nextDatabase.members = dedupeMemberRows(nextDatabase.members);
   }
   nextDatabase.members = recomputeMemberShareCapital(nextDatabase.members || [], nextDatabase.shareCapitalTransactions || []);
   if (Array.isArray(nextDatabase.shareCapitalTransactions) && nextDatabase.shareCapitalTransactions.length) {

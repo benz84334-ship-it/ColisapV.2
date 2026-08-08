@@ -254,6 +254,10 @@ language plpgsql
 security definer
 set search_path = public
 as $$
+declare
+  stable_member_id text;
+  stable_member_row_id text;
+  stable_cif_number text;
 begin
   if coalesce(new.request_kind, '') = 'claimant' or coalesce(new.approval_queue, '') = 'claimant' or coalesce(new.request_type, '') = 'Claimant Application' then
     return new;
@@ -262,6 +266,23 @@ begin
   if coalesce(new.request_status, '') <> 'Approved' then
     return new;
   end if;
+
+  stable_member_row_id := coalesce(
+    nullif(new.member_id, ''),
+    nullif(new.id, ''),
+    nullif(new.request_id, ''),
+    public.generate_member_row_id_safe()
+  );
+  stable_member_id := coalesce(
+    nullif(new.member_id, ''),
+    nullif(new.request_id, ''),
+    nullif(new.id, ''),
+    stable_member_row_id
+  );
+  stable_cif_number := coalesce(
+    nullif(new.cif_number, ''),
+    public.generate_cifk_member_number_safe()
+  );
 
   insert into public.members (
     id, member_id, cif_number, application_status, first_name, middle_name, last_name, suffix_name, full_name,
@@ -272,24 +293,9 @@ begin
     beneficiaries, photo, metadata, created_at, updated_at
   )
   values (
-    case
-      when coalesce(nullif(new.id, ''), '') = coalesce(nullif(new.member_id, ''), '') then public.generate_member_row_id_safe()
-      else coalesce(nullif(new.id, ''), public.generate_member_row_id_safe())
-    end,
-    case
-      when coalesce(nullif(new.member_id, ''), '') = '' then public.generate_member_row_id_safe()
-      when exists (
-        select 1 from public.members where id = new.member_id or member_id = new.member_id
-      ) then public.generate_member_row_id_safe()
-      else new.member_id
-    end,
-    case
-      when coalesce(nullif(new.cif_number, ''), '') = '' then public.generate_cifk_member_number_safe()
-      when exists (
-        select 1 from public.members where cif_number = new.cif_number or member_id = new.cif_number
-      ) then public.generate_cifk_member_number_safe()
-      else new.cif_number
-    end,
+    stable_member_row_id,
+    stable_member_id,
+    stable_cif_number,
     coalesce(new.application_status, 'New'),
     new.first_name, new.middle_name, new.last_name, new.suffix_name, new.full_name,
     new.address, new.barangay, new.birthdate, new.age_years, new.age_months, new.gender, new.civil_status, new.contact_number,
@@ -300,7 +306,8 @@ begin
     coalesce(new.branch, 'Main Office'), coalesce(new.share_capital, 0), new.last_share_capital_deposit_date,
     new.benefit_category, coalesce(new.beneficiaries, '[]'::jsonb), new.photo, coalesce(new.metadata, '{}'::jsonb), now(), now()
   )
-  on conflict (id) do update set
+  on conflict (member_id) do update set
+    id = excluded.id,
     member_id = excluded.member_id,
     cif_number = excluded.cif_number,
     application_status = excluded.application_status,

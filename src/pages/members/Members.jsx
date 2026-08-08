@@ -252,6 +252,10 @@ function normalizeImportStatus(value = '') {
   return '';
 }
 
+function normalizeComparableText(value = '') {
+  return normalizeImportText(value).toLowerCase().replace(/[^a-z0-9]+/g, '');
+}
+
 function formatTemplateCsv() {
   return [
     IMPORT_HEADERS.join(','),
@@ -286,16 +290,26 @@ function validateImportedMemberRow(row = {}, currentMembers = [], seenCifs = new
   const lastContributionDateRaw = row['Last Contribution Date'] || row.lastContributionDate || '';
   const status = normalizeImportStatus(row.Status || row.status || '');
   const duplicatedInFile = cifNumber && seenCifs.has(cifNumber);
-  const existingSupabase = cifNumber
-    ? currentMembers.some((member) => String(member.cifNumber || '').trim() === cifNumber || String(member.memberId || '').trim() === cifNumber)
-    : false;
+  const normalizedMemberName = normalizeComparableText(memberName);
+  const normalizedContact = normalizeComparableText(contact);
+  const existingSupabase = currentMembers.some((member) => {
+    const memberCif = normalizeImportText(member.cifNumber || '');
+    const memberId = normalizeImportText(member.memberId || '');
+    const memberFullName = normalizeComparableText(member.fullName || [member.firstName, member.middleName, member.lastName].filter(Boolean).join(' '));
+    const memberContact = normalizeComparableText(member.contactNumber || '');
+    const sameCif = cifNumber && (memberCif === cifNumber || memberId === cifNumber);
+    const sameIdentity = normalizedMemberName && memberFullName && normalizedMemberName === memberFullName
+      && (!normalizedContact || !memberContact || normalizedContact === memberContact);
+    const sameContact = normalizedContact && memberContact && normalizedContact === memberContact;
+    return sameCif || sameIdentity || sameContact;
+  });
 
   if (!memberName) errors.push('Member name is required');
 
   if (cifNumber && !/^CIFK-\d{4}-\d{5}$/.test(cifNumber)) errors.push('Invalid CIFK format');
   if (!cifNumber) warnings.push('CIFK will be generated');
   if (duplicatedInFile) warnings.push('Duplicate CIFK');
-  if (existingSupabase) warnings.push('CIFK already exists');
+  if (existingSupabase) errors.push('Member already exists');
 
   if (savingsRaw) {
     const parsedSavings = Number(String(savingsRaw).replace(/,/g, ''));
@@ -1071,6 +1085,7 @@ export default function Members() {
     const seenImportCifs = new Set();
     const seenImportRows = new Set();
     const currentMembers = Array.isArray(scopedData.members) ? scopedData.members : [];
+    const allMembers = Array.isArray(data.members) ? data.members : currentMembers;
     const previewRows = parsedRows
       .map((row, index) => ({ row: { ...(row || {}) }, index }))
       .filter(({ row }) => {
@@ -1100,7 +1115,7 @@ export default function Members() {
           Status: status,
           __rowNumber: sourceRow,
           __sourceRow: row.__sourceRow || sourceRow,
-        }, currentMembers, seenImportCifs);
+        }, allMembers, seenImportCifs);
         const identityKey = [
           sourceRow,
           validation.normalized.cifNumber || sheetCif || '',
@@ -1119,7 +1134,8 @@ export default function Members() {
           statusTone: validation.status,
           errors: validation.errors,
           warnings: validation.warnings,
-          isDuplicate: validation.warnings.some((item) => /duplicate|already exists/i.test(item)),
+          isDuplicate: validation.errors.some((item) => /duplicate|already exists/i.test(item))
+            || validation.warnings.some((item) => /duplicate|already exists/i.test(item)),
           isValid: validation.status === 'valid',
         };
       })
