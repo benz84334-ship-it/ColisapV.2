@@ -549,45 +549,43 @@ export function DataProvider({ children }) {
     async (membersToCreate = [], user) => {
       const incoming = Array.isArray(membersToCreate) ? membersToCreate.filter(Boolean) : [];
       if (!incoming.length) return;
-      let finalMembersSnapshot = [];
+      const existingMembers = Array.isArray(database.members) ? database.members : [];
+      const nextMembers = [...existingMembers];
 
-      updateKey('members', (members = []) => {
-        const existingMembers = Array.isArray(members) ? members : [];
-        const nextMembers = [...existingMembers];
+      incoming.forEach((member) => {
+        const generatedMemberRowId = nextMemberRowId(nextMembers);
+        const importedMemberId = String(member.memberId || '').trim();
+        const importedCifNumber = String(member.cifNumber || '').trim();
+        const nextMemberIdCode = nextMemberId(nextMembers, member.membershipDate || todayIso());
+        const nextCifCode = nextCifNumber(nextMembers, member.membershipDate || todayIso());
+        const nextBeneficiaries = normalizeBeneficiaries(member.beneficiaries).map((beneficiary, index) => ({
+          ...beneficiary,
+          memberId: generatedMemberRowId,
+          sortOrder: index,
+        }));
+        const nextMember = {
+          ...member,
+          branch: member.branch || getActorBranch(database.users, user),
+          id: generatedMemberRowId,
+          memberId: nextMemberIdCode,
+          cifNumber: nextCifCode,
+          photo: member.photo || avatarForName(member.fullName),
+          lastShareCapitalDepositDate: member.lastShareCapitalDepositDate || todayIso(),
+          beneficiaries: nextBeneficiaries,
+          metadata: {
+            ...(member.metadata || {}),
+            importedMemberId: importedMemberId || null,
+            importedCifNumber: importedCifNumber || null,
+          },
+          createdAt: new Date().toISOString(),
+        };
 
-        incoming.forEach((member) => {
-          const generatedMemberRowId = nextMemberRowId(nextMembers);
-          const nextMemberIdCode = isDuplicateMemberId(nextMembers, member.memberId)
-            ? nextMemberId(nextMembers, member.membershipDate || todayIso())
-            : (member.memberId || nextMemberId(nextMembers, member.membershipDate || todayIso()));
-          const nextCifCode = isDuplicateCifNumber(nextMembers, member.cifNumber)
-            ? nextCifNumber(nextMembers, member.membershipDate || todayIso())
-            : (member.cifNumber || nextCifNumber(nextMembers, member.membershipDate || todayIso()));
-          const nextBeneficiaries = normalizeBeneficiaries(member.beneficiaries).map((beneficiary, index) => ({
-            ...beneficiary,
-            memberId: generatedMemberRowId,
-            sortOrder: index,
-          }));
-          const nextMember = {
-            ...member,
-            branch: member.branch || getActorBranch(database.users, user),
-            id: generatedMemberRowId,
-            memberId: nextMemberIdCode,
-            cifNumber: nextCifCode,
-            photo: member.photo || avatarForName(member.fullName),
-            lastShareCapitalDepositDate: member.lastShareCapitalDepositDate || todayIso(),
-            beneficiaries: nextBeneficiaries,
-            createdAt: new Date().toISOString(),
-          };
-
-          nextMembers.unshift({ ...nextMember, status: getComputedMemberStatus(nextMember, database.loans) });
-        });
-
-        finalMembersSnapshot = nextMembers;
-        return nextMembers;
+        nextMembers.unshift({ ...nextMember, status: getComputedMemberStatus(nextMember, database.loans) });
       });
 
-      await saveSupabaseKey('members', finalMembersSnapshot).catch((error) => {
+      setDatabase((current) => ({ ...current, members: nextMembers }));
+
+      await saveSupabaseKey('members', nextMembers).catch((error) => {
         console.error(error);
         setDatabaseError(error.message || 'Unable to sync imported members to Supabase. Changes saved locally.');
         throw error;
