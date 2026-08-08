@@ -153,7 +153,9 @@ function withMemberPhoto(member = {}) {
   return {
     ...member,
     benefitCategory: normalizeBenefitCategory(member.benefitCategory || member.plan || ''),
-    barangay: /,\s*Antique$/i.test(String(member.barangay || ''))
+    barangay: member?.metadata?.importedFrom === 'csv_excel' || member?.metadata?.preserveImportedValues
+      ? member.barangay
+      : /,\s*Antique$/i.test(String(member.barangay || ''))
       ? member.barangay
       : `${String(member.barangay || '').trim()}, Antique`.replace(/^,\s*/, ''),
     photo: usesInitialsAvatar ? `https://randomuser.me/api/portraits/${photoType}/${photoNumber}.jpg` : member.photo,
@@ -200,6 +202,7 @@ function memberRowToAppMember(row = {}) {
     dependents: row.dependents,
     savingsAccountNo: row.savings_account_no,
     lastContributionDate: row.last_contribution_date ?? row.membership_date,
+    membershipDate: row.last_contribution_date ?? row.membership_date,
     signedDate: row.signed_date,
     witnessStaff: row.witness_staff,
     actionTaken: row.action_taken,
@@ -436,6 +439,9 @@ export function DataProvider({ children }) {
     const currentHistory = database.memberStatusHistory || [];
     const nextHistory = [];
     const nextMembers = currentMembers.map((member) => {
+      if (member?.metadata?.importedFrom === 'csv_excel' || member?.metadata?.preserveImportedValues) {
+        return member;
+      }
       const computedStatus = getComputedMemberStatus(member, database.loans || [], systemDate);
       if (computedStatus === member.status) return member;
 
@@ -514,12 +520,12 @@ export function DataProvider({ children }) {
       updateKey('members', (members = []) => {
         const existingMembers = Array.isArray(members) ? members : [];
         const generatedMemberRowId = nextMemberRowId(existingMembers);
-        const nextMemberIdCode = isDuplicateMemberId(existingMembers, member.memberId)
-          ? nextMemberId(existingMembers, member.membershipDate || todayIso())
-          : (member.memberId || nextMemberId(existingMembers, member.membershipDate || todayIso()));
-        const nextCifCode = isDuplicateCifNumber(existingMembers, member.cifNumber)
-          ? nextCifNumber(existingMembers, member.membershipDate || todayIso())
-          : (member.cifNumber || nextCifNumber(existingMembers, member.membershipDate || todayIso()));
+        const nextMemberIdCode = member.memberId
+          ? (isDuplicateMemberId(existingMembers, member.memberId) ? nextMemberId(existingMembers, member.membershipDate || todayIso()) : member.memberId)
+          : nextMemberId(existingMembers, member.membershipDate || todayIso());
+        const nextCifCode = member.cifNumber
+          ? (isDuplicateCifNumber(existingMembers, member.cifNumber) ? nextCifNumber(existingMembers, member.membershipDate || todayIso()) : member.cifNumber)
+          : nextCifNumber(existingMembers, member.membershipDate || todayIso());
         const nextBeneficiaries = normalizeBeneficiaries(member.beneficiaries).map((beneficiary, index) => ({
           ...beneficiary,
           memberId: generatedMemberRowId,
@@ -532,12 +538,19 @@ export function DataProvider({ children }) {
           memberId: nextMemberIdCode,
           cifNumber: nextCifCode,
           photo: member.photo || avatarForName(member.fullName),
-          lastShareCapitalDepositDate: member.lastShareCapitalDepositDate || todayIso(),
+          lastShareCapitalDepositDate: member.lastShareCapitalDepositDate || member.lastContributionDate || null,
+          lastContributionDate: member.lastContributionDate || member.membershipDate || null,
+          membershipDate: member.lastContributionDate || member.membershipDate || null,
           beneficiaries: nextBeneficiaries,
           createdAt: new Date().toISOString(),
         };
 
-        return [{ ...nextMember, status: getComputedMemberStatus(nextMember, database.loans) }, ...members];
+        return [{
+          ...nextMember,
+          status: member?.metadata?.importedFrom === 'csv_excel' || member?.metadata?.preserveImportedValues
+            ? (member.status || nextMember.status || 'Active')
+            : getComputedMemberStatus(nextMember, database.loans),
+        }, ...members];
       });
       addActivity('Added Member', `${member.fullName} was added to member records.`, user);
       addNotification('New member', `${member.fullName} is now registered.`, 'success');
@@ -553,11 +566,16 @@ export function DataProvider({ children }) {
       const nextMembers = [...existingMembers];
 
       incoming.forEach((member) => {
+        const importOrder = Number(member.metadata?.importOrder ?? member.metadata?.sourceSheetRow ?? member.metadata?.sourceRow ?? nextMembers.length + 1);
         const generatedMemberRowId = nextMemberRowId(nextMembers);
         const importedMemberId = String(member.memberId || '').trim();
         const importedCifNumber = String(member.cifNumber || '').trim();
-        const nextMemberIdCode = nextMemberId(nextMembers, member.membershipDate || todayIso());
-        const nextCifCode = nextCifNumber(nextMembers, member.membershipDate || todayIso());
+        const nextMemberIdCode = importedMemberId
+          ? (isDuplicateMemberId(nextMembers, importedMemberId) ? nextMemberId(nextMembers, member.membershipDate || todayIso()) : importedMemberId)
+          : nextMemberId(nextMembers, member.membershipDate || todayIso());
+        const nextCifCode = importedCifNumber
+          ? (isDuplicateCifNumber(nextMembers, importedCifNumber) ? nextCifNumber(nextMembers, member.membershipDate || todayIso()) : importedCifNumber)
+          : nextCifNumber(nextMembers, member.membershipDate || todayIso());
         const nextBeneficiaries = normalizeBeneficiaries(member.beneficiaries).map((beneficiary, index) => ({
           ...beneficiary,
           memberId: generatedMemberRowId,
@@ -570,17 +588,21 @@ export function DataProvider({ children }) {
           memberId: nextMemberIdCode,
           cifNumber: nextCifCode,
           photo: member.photo || avatarForName(member.fullName),
-          lastShareCapitalDepositDate: member.lastShareCapitalDepositDate || todayIso(),
+          lastShareCapitalDepositDate: member.lastShareCapitalDepositDate || member.lastContributionDate || null,
           beneficiaries: nextBeneficiaries,
           metadata: {
             ...(member.metadata || {}),
             importedMemberId: importedMemberId || null,
             importedCifNumber: importedCifNumber || null,
+            importOrder,
           },
           createdAt: new Date().toISOString(),
         };
 
-        nextMembers.unshift({ ...nextMember, status: getComputedMemberStatus(nextMember, database.loans) });
+        nextMembers.push({
+          ...nextMember,
+          status: member.status || nextMember.status || 'Active',
+        });
       });
 
       setDatabase((current) => ({ ...current, members: nextMembers }));

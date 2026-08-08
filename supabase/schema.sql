@@ -49,6 +49,60 @@ begin
 end;
 $$;
 
+create or replace function public.parse_import_date(value text)
+returns date
+language plpgsql
+immutable
+as $$
+declare
+  cleaned text := nullif(trim(coalesce(value, '')), '');
+  parts text[];
+  first_part integer;
+  second_part integer;
+  third_part integer;
+  parsed_date date;
+begin
+  if cleaned is null or lower(cleaned) = 'not set' then
+    return null;
+  end if;
+
+  if cleaned ~ '^\d+(\.\d+)?$' then
+    return (date '1899-12-30' + cleaned::numeric::integer);
+  end if;
+
+  parts := regexp_split_to_array(cleaned, '[\/\.-]');
+  if array_length(parts, 1) = 3
+     and parts[1] ~ '^\d+$'
+     and parts[2] ~ '^\d+$'
+     and parts[3] ~ '^\d+$' then
+    first_part := parts[1]::integer;
+    second_part := parts[2]::integer;
+    third_part := parts[3]::integer;
+
+    if third_part >= 1000 then
+      begin
+        if first_part > 12 then
+          parsed_date := make_date(third_part, second_part, first_part);
+        elsif second_part > 12 then
+          parsed_date := make_date(third_part, first_part, second_part);
+        else
+          parsed_date := make_date(third_part, first_part, second_part);
+        end if;
+        return parsed_date;
+      exception when others then
+        return null;
+      end;
+    end if;
+  end if;
+
+  begin
+    return cleaned::date;
+  exception when others then
+    return null;
+  end;
+end;
+$$;
+
 drop trigger if exists sync_approved_request_to_member_trigger on public.requests;
 drop trigger if exists set_member_id_from_request_trigger on public.members;
 
@@ -289,7 +343,7 @@ begin
     address, barangay, birthdate, age_years, age_months, gender, civil_status, contact_number,
     occupation, employer, office_address, religion, religion_other, dependents, savings_account_no, last_contribution_date,
     signed_date, witness_staff, action_taken, approving_authority, approval_date, findings, status,
-    status_override, branch, share_capital, last_share_capital_deposit_date, benefit_category,
+    status_override, branch, import_order, share_capital, last_share_capital_deposit_date, benefit_category,
     beneficiaries, photo, metadata, created_at, updated_at
   )
   values (
@@ -303,7 +357,7 @@ begin
     new.savings_account_no, coalesce(new.last_contribution_date, current_date), coalesce(new.signed_date, current_date), new.witness_staff,
     coalesce(new.action_taken, 'Approved'), coalesce(new.approving_authority, new.requested_by, 'System'),
     coalesce(new.approval_date, current_date), new.findings, coalesce(new.status, 'Active'), null,
-    coalesce(new.branch, 'Main Office'), coalesce(new.share_capital, 0), new.last_share_capital_deposit_date,
+    coalesce(new.branch, 'Main Office'), coalesce(new.import_order, null), coalesce(new.share_capital, 0), new.last_share_capital_deposit_date,
     new.benefit_category, coalesce(new.beneficiaries, '[]'::jsonb), new.photo, coalesce(new.metadata, '{}'::jsonb), now(), now()
   )
   on conflict (member_id) do update set
@@ -339,6 +393,7 @@ begin
     status = excluded.status,
     status_override = excluded.status_override,
     branch = excluded.branch,
+    import_order = coalesce(excluded.import_order, public.members.import_order),
     share_capital = coalesce(nullif(excluded.share_capital, 0), public.members.share_capital),
     last_share_capital_deposit_date = excluded.last_share_capital_deposit_date,
     benefit_category = excluded.benefit_category,
@@ -346,6 +401,143 @@ begin
     photo = excluded.photo,
     metadata = excluded.metadata,
     updated_at = now();
+
+  return new;
+end;
+$$;
+
+create or replace function public.prevent_duplicate_member_insert()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  normalized_new_name text;
+  normalized_new_contact text;
+  normalized_new_birthdate date;
+  normalized_new_branch text;
+begin
+
+  normalized_new_name := lower(trim(coalesce(new.full_name, concat_ws(' ', new.first_name, new.middle_name, new.last_name), '')));
+  normalized_new_contact := lower(regexp_replace(coalesce(new.contact_number, ''), '\D', '', 'g'));
+  normalized_new_birthdate := new.birthdate;
+  normalized_new_branch := lower(trim(coalesce(new.branch, 'Main Office')));
+
+  if exists (
+    select 1
+    from public.members
+    where (coalesce(new.member_id, '') <> '' and member_id = new.member_id)
+       or (coalesce(new.cif_number, '') <> '' and cif_number = new.cif_number)
+       or (coalesce(new.import_key, '') <> '' and import_key = new.import_key)
+       or (
+        normalized_new_name <> ''
+        and lower(trim(coalesce(full_name, concat_ws(' ', first_name, middle_name, last_name), ''))) = normalized_new_name
+        and coalesce(birthdate, date '0001-01-01') = coalesce(normalized_new_birthdate, date '0001-01-01')
+        and lower(trim(coalesce(branch, 'Main Office'))) = normalized_new_branch
+        and (
+          normalized_new_contact = ''
+          or lower(regexp_replace(coalesce(contact_number, ''), '\D', '', 'g')) = normalized_new_contact
+        )
+      )
+  ) then
+    update public.members
+    set
+      id = coalesce(new.id, id),
+      member_id = coalesce(new.member_id, member_id),
+      cif_number = coalesce(new.cif_number, cif_number),
+      import_key = coalesce(new.import_key, import_key),
+      application_status = coalesce(new.application_status, application_status),
+      first_name = coalesce(new.first_name, first_name),
+      middle_name = coalesce(new.middle_name, middle_name),
+      last_name = coalesce(new.last_name, last_name),
+      suffix_name = coalesce(new.suffix_name, suffix_name),
+      full_name = coalesce(new.full_name, full_name),
+      address = coalesce(new.address, address),
+      barangay = coalesce(new.barangay, barangay),
+      birthdate = coalesce(new.birthdate, birthdate),
+      age_years = coalesce(new.age_years, age_years),
+      age_months = coalesce(new.age_months, age_months),
+      gender = coalesce(new.gender, gender),
+      civil_status = coalesce(new.civil_status, civil_status),
+      contact_number = coalesce(new.contact_number, contact_number),
+      occupation = coalesce(new.occupation, occupation),
+      employer = coalesce(new.employer, employer),
+      office_address = coalesce(new.office_address, office_address),
+      religion = coalesce(new.religion, religion),
+      religion_other = coalesce(new.religion_other, religion_other),
+      dependents = coalesce(new.dependents, dependents),
+      savings_account_no = coalesce(new.savings_account_no, savings_account_no),
+      last_contribution_date = coalesce(new.last_contribution_date, last_contribution_date),
+      signed_date = coalesce(new.signed_date, signed_date),
+      witness_staff = coalesce(new.witness_staff, witness_staff),
+      action_taken = coalesce(new.action_taken, action_taken),
+      approving_authority = coalesce(new.approving_authority, approving_authority),
+      approval_date = coalesce(new.approval_date, approval_date),
+      findings = coalesce(new.findings, findings),
+      status = coalesce(new.status, status),
+      status_override = coalesce(new.status_override, status_override),
+      branch = coalesce(new.branch, branch),
+      import_order = coalesce(new.import_order, import_order),
+      share_capital = coalesce(new.share_capital, share_capital),
+      last_share_capital_deposit_date = coalesce(new.last_share_capital_deposit_date, last_share_capital_deposit_date),
+      benefit_category = coalesce(new.benefit_category, benefit_category),
+      beneficiaries = coalesce(new.beneficiaries, beneficiaries),
+      photo = coalesce(new.photo, photo),
+      metadata = coalesce(new.metadata, metadata),
+      updated_at = now()
+    where member_id = new.member_id
+       or cif_number = new.cif_number
+       or import_key = new.import_key
+       or (
+        normalized_new_name <> ''
+        and lower(trim(coalesce(full_name, concat_ws(' ', first_name, middle_name, last_name), ''))) = normalized_new_name
+        and coalesce(birthdate, date '0001-01-01') = coalesce(normalized_new_birthdate, date '0001-01-01')
+        and lower(trim(coalesce(branch, 'Main Office'))) = normalized_new_branch
+        and (
+          normalized_new_contact = ''
+          or lower(regexp_replace(coalesce(contact_number, ''), '\D', '', 'g')) = normalized_new_contact
+        )
+      );
+
+    return null;
+  end if;
+
+  return new;
+end;
+$$;
+
+create or replace function public.normalize_member_import_identity()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  import_key text;
+  import_hash text;
+  current_year text := to_char(current_date, 'YYYY');
+begin
+  import_key := coalesce(
+    nullif(trim(coalesce(new.metadata->>'importKey', new.metadata->>'import_key')), ''),
+    nullif(trim(coalesce(new.metadata->>'sourceIdentity', new.metadata->>'source_identity')), ''),
+    nullif(trim(coalesce(new.metadata->>'importedMemberId', new.metadata->>'imported_member_id')), ''),
+    nullif(trim(coalesce(new.metadata->>'importedCifNumber', new.metadata->>'imported_cif_number')), '')
+  );
+
+  if import_key = '' then
+    return new;
+  end if;
+
+  import_hash := left(md5(import_key), 12);
+
+  new.import_key := import_key;
+  new.id := coalesce(nullif(new.id, ''), 'IMP-' || import_hash);
+  new.member_id := coalesce(nullif(new.member_id, ''), 'M-' || import_hash);
+  new.cif_number := coalesce(
+    nullif(new.cif_number, ''),
+    'CIFK-' || current_year || '-' || upper(right(md5(import_key), 5))
+  );
 
   return new;
 end;
@@ -429,6 +621,7 @@ declare
   signed_date_value date;
   approval_date_value date;
   share_capital_value numeric(14,2);
+  import_order_value integer;
 begin
   source_identity := coalesce(
     nullif(trim(payload->>'id'), ''),
@@ -484,26 +677,42 @@ begin
     nullif(trim(payload->>'Phone Number'), ''),
     nullif(trim(payload->>'Phone No.'), '')
   );
-  last_contribution_date_value := case
-    when nullif(trim(payload->>'lastContributionDate'), '') is null then
-      case
-        when nullif(trim(payload->>'membershipDate'), '') is null then null
-        else (trim(payload->>'membershipDate'))::date
-      end
-    else (trim(payload->>'lastContributionDate'))::date
-  end;
+  last_contribution_date_value := coalesce(
+    public.parse_import_date(coalesce(
+      payload->>'lastContributionDate',
+      payload->>'Last Contribution Date',
+      payload->>'LastContributionDate',
+      payload->>'last contribution date',
+      payload->>'membershipDate',
+      payload->>'Membership Date',
+      payload->>'Date Joined',
+      payload->>'dateJoined',
+      payload->>'last_contribution_date',
+      payload->>'membership_date'
+    )),
+    public.parse_import_date(coalesce(
+      payload->'metadata'->>'lastContributionDate',
+      payload->'metadata'->>'Last Contribution Date',
+      payload->'metadata'->>'membershipDate',
+      payload->'metadata'->>'Membership Date',
+      payload->'metadata'->>'dateJoined'
+    ))
+  );
   birthdate_value := case
     when nullif(trim(payload->>'birthdate'), '') is null then null
+    when lower(trim(payload->>'birthdate')) = 'not set' then null
     when trim(payload->>'birthdate') ~ '^\d+(\.\d+)?$' then (date '1899-12-30' + (trim(payload->>'birthdate'))::numeric::integer)
     else (trim(payload->>'birthdate'))::date
   end;
   signed_date_value := case
     when nullif(trim(payload->>'signedDate'), '') is null then null
+    when lower(trim(payload->>'signedDate')) = 'not set' then null
     when trim(payload->>'signedDate') ~ '^\d+(\.\d+)?$' then (date '1899-12-30' + (trim(payload->>'signedDate'))::numeric::integer)
     else (trim(payload->>'signedDate'))::date
   end;
   approval_date_value := case
     when nullif(trim(payload->>'approvalDate'), '') is null then null
+    when lower(trim(payload->>'approvalDate')) = 'not set' then null
     when trim(payload->>'approvalDate') ~ '^\d+(\.\d+)?$' then (date '1899-12-30' + (trim(payload->>'approvalDate'))::numeric::integer)
     else (trim(payload->>'approvalDate'))::date
   end;
@@ -511,6 +720,20 @@ begin
     when nullif(trim(coalesce(payload->>'shareCapital', payload->>'Savings', payload->>'Saving', payload->>'Savings Amount', payload->>'Amount Saved', payload->>'share_capital')), '') is null then 0
     else (trim(coalesce(payload->>'shareCapital', payload->>'Savings', payload->>'Saving', payload->>'Savings Amount', payload->>'Amount Saved', payload->>'share_capital')))::numeric(14,2)
   end;
+  import_order_value := coalesce(
+    case
+      when nullif(trim(coalesce(payload->'metadata'->>'importOrder', payload->'metadata'->>'sourceSheetRow', payload->'metadata'->>'sourceRow')), '') is null then null
+      else (trim(coalesce(payload->'metadata'->>'importOrder', payload->'metadata'->>'sourceSheetRow', payload->'metadata'->>'sourceRow')))::integer
+    end,
+    case
+      when nullif(trim(coalesce(payload->>'importOrder', payload->>'import_order')), '') is null then null
+      else (trim(coalesce(payload->>'importOrder', payload->>'import_order')))::integer
+    end,
+    case
+      when nullif(trim(coalesce(payload->>'sourceSheetRow', payload->>'sourceRow')), '') is null then null
+      else (trim(coalesce(payload->>'sourceSheetRow', payload->>'sourceRow')))::integer
+    end
+  );
 
   normalized := jsonb_build_object(
     'member_id', coalesce(
@@ -565,11 +788,18 @@ begin
     'findings', coalesce(nullif(trim(payload->>'findings'), ''), nullif(trim(payload->>'Findings'), '')),
     'status', coalesce(nullif(trim(payload->>'status'), ''), 'Pending'),
     'branch', coalesce(nullif(trim(payload->>'branch'), ''), 'Main Office'),
+    'import_order', import_order_value,
     'share_capital', share_capital_value,
-    'last_share_capital_deposit_date', case
-      when nullif(trim(coalesce(payload->>'lastShareCapitalDepositDate', payload->>'Last Share Capital Deposit Date', payload->>'Last Contribution Date', payload->>'lastContributionDate', payload->>'Membership Date', payload->>'membershipDate')), '') is null then null
-      else (trim(coalesce(payload->>'lastShareCapitalDepositDate', payload->>'Last Share Capital Deposit Date', payload->>'Last Contribution Date', payload->>'lastContributionDate', payload->>'Membership Date', payload->>'membershipDate')))::date
-    end,
+    'last_share_capital_deposit_date', public.parse_import_date(coalesce(
+      payload->>'lastShareCapitalDepositDate',
+      payload->>'Last Share Capital Deposit Date',
+      payload->>'LastContributionDate',
+      payload->>'Last Contribution Date',
+      payload->>'lastContributionDate',
+      payload->>'Membership Date',
+      payload->>'membershipDate',
+      payload->>'dateJoined'
+    )),
     'benefit_category', coalesce(nullif(trim(payload->>'benefitCategory'), ''), nullif(trim(payload->>'benefit_category'), ''), nullif(trim(payload->>'Benefit Category'), '')),
     'beneficiaries', coalesce(payload->'beneficiaries', '[]'::jsonb),
     'photo', coalesce(nullif(trim(payload->>'photo'), ''), nullif(trim(payload->>'Photo'), '')),
@@ -584,6 +814,7 @@ create table if not exists public.members (
   id text primary key,
   member_id text not null unique,
   cif_number text unique,
+  import_key text unique,
   application_status text not null default 'New',
   first_name text,
   middle_name text,
@@ -615,6 +846,7 @@ create table if not exists public.members (
   status text not null default 'Active',
   status_override text,
   branch text not null default 'Main Office',
+  import_order integer,
   share_capital numeric(14,2) not null default 0,
   last_share_capital_deposit_date date,
   benefit_category text,
@@ -631,6 +863,27 @@ alter table public.members add column if not exists share_capital numeric(14,2) 
 alter table public.members add column if not exists last_contribution_date date;
 alter table public.members add column if not exists last_share_capital_deposit_date date;
 alter table public.members add column if not exists benefit_category text;
+alter table public.members add column if not exists import_order integer;
+alter table public.members add column if not exists import_key text;
+
+update public.members
+set import_key = coalesce(
+  nullif(import_key, ''),
+  nullif(trim(coalesce(metadata->>'importKey', metadata->>'import_key', metadata->>'sourceIdentity', metadata->>'source_identity', metadata->>'importedMemberId', metadata->>'imported_member_id', metadata->>'importedCifNumber', metadata->>'imported_cif_number')), '')
+)
+where coalesce(import_key, '') = ''
+  and (
+    coalesce(metadata->>'importKey', '') <> ''
+    or coalesce(metadata->>'import_key', '') <> ''
+    or coalesce(metadata->>'sourceIdentity', '') <> ''
+    or coalesce(metadata->>'source_identity', '') <> ''
+    or coalesce(metadata->>'importedMemberId', '') <> ''
+    or coalesce(metadata->>'imported_member_id', '') <> ''
+    or coalesce(metadata->>'importedCifNumber', '') <> ''
+    or coalesce(metadata->>'imported_cif_number', '') <> ''
+  );
+
+create index if not exists members_import_key_idx on public.members (import_key);
 
 create table if not exists public.member_beneficiaries (
   id text primary key,
@@ -1120,6 +1373,7 @@ set
     from public.share_capital_transactions t
     where t.member_id = m.id
   ), m.last_share_capital_deposit_date);
+-- Recompute member share capital after syncing transactions.
 drop trigger if exists set_updated_at_loans on public.loans;
 create trigger set_updated_at_loans before update on public.loans for each row execute function public.set_updated_at();
 drop trigger if exists set_updated_at_collections on public.collections;
@@ -1147,6 +1401,14 @@ for each row execute function public.sync_member_beneficiaries_from_member();
 drop trigger if exists set_member_id_from_request_trigger on public.members;
 create trigger set_member_id_from_request_trigger before insert on public.members
 for each row execute function public.set_member_id_from_request();
+
+drop trigger if exists normalize_member_import_identity_trigger on public.members;
+create trigger normalize_member_import_identity_trigger before insert or update on public.members
+for each row execute function public.normalize_member_import_identity();
+
+drop trigger if exists prevent_duplicate_member_insert_trigger on public.members;
+create trigger prevent_duplicate_member_insert_trigger before insert on public.members
+for each row execute function public.prevent_duplicate_member_insert();
 
 drop trigger if exists set_request_id_from_request_trigger on public.requests;
 create trigger set_request_id_from_request_trigger before insert on public.requests

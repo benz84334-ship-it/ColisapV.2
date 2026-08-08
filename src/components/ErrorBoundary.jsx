@@ -14,6 +14,14 @@ function reloadWithCacheBust() {
   window.location.replace(url.toString());
 }
 
+function clearChunkRetryFlag() {
+  try {
+    window.sessionStorage.removeItem('__colisap_chunk_retry__');
+  } catch (error) {
+    console.error('Unable to clear chunk retry flag:', error);
+  }
+}
+
 export default class ErrorBoundary extends Component {
   constructor(props) {
     super(props);
@@ -28,10 +36,23 @@ export default class ErrorBoundary extends Component {
     console.error('UI crashed:', error, info);
     if (isChunkLoadError(error) && typeof window !== 'undefined') {
       const refreshFlag = '__colisap_chunk_retry__';
-      if (!window.sessionStorage.getItem(refreshFlag)) {
-        window.sessionStorage.setItem(refreshFlag, '1');
+      const retryCount = Number(window.sessionStorage.getItem(refreshFlag) || '0');
+      if (retryCount < 3) {
+        window.sessionStorage.setItem(refreshFlag, String(retryCount + 1));
         reloadWithCacheBust();
+      } else {
+        clearChunkRetryFlag();
       }
+    }
+  }
+
+  componentDidUpdate(prevProps, prevState) {
+    if (this.state.hasError && !prevState.hasError) {
+      return;
+    }
+
+    if (!this.state.hasError && prevState.hasError) {
+      clearChunkRetryFlag();
     }
   }
 

@@ -118,14 +118,28 @@ function normalizeImportedDate(value) {
   }
   const text = normalizeImportText(value);
   if (!text) return '';
-  if (/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(text)) {
-    const [month, day, year] = text.split('/').map(Number);
-    const parsed = new Date(year, month - 1, day);
-    if (!Number.isNaN(parsed.getTime())) {
-      return new Date(parsed.getTime() - parsed.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+  const serialMatch = text.match(/^\d+(\.\d+)?$/);
+  if (serialMatch) {
+    return excelSerialToIso(Number(text));
+  }
+
+  const parts = text.split(/[\/.-]/).map((part) => part.trim()).filter(Boolean);
+  if (parts.length === 3 && parts.every((part) => /^\d+$/.test(part))) {
+    const [first, second, third] = parts.map(Number);
+    const year = third >= 1000 ? third : null;
+    if (year) {
+      const dayFirst = first > 12 || (first <= 31 && second <= 12 && first > second);
+      const month = dayFirst ? second - 1 : first - 1;
+      const day = dayFirst ? first : second;
+      const parsed = new Date(year, month, day);
+      if (!Number.isNaN(parsed.getTime())) {
+        return new Date(parsed.getTime() - parsed.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+      }
     }
   }
-  const parsed = new Date(text);
+
+  const normalizedText = text.includes('T') ? text : text.replace(' ', 'T');
+  const parsed = new Date(normalizedText);
   if (!Number.isNaN(parsed.getTime())) {
     return new Date(parsed.getTime() - parsed.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
   }
@@ -138,6 +152,25 @@ function normalizeImportedNumber(value) {
   const text = normalizeImportText(value).replace(/,/g, '');
   const parsed = Number(text);
   return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function getImportedContributionDate(row = {}) {
+  return normalizeImportedDate(pickImportValue(row, [
+    'lastContributionDate',
+    'Last Contribution Date',
+    'last contribution date',
+    'LastContributionDate',
+    'LastContribution Date',
+    'membershipDate',
+    'Membership Date',
+    'Membership date',
+    'Date Joined',
+    'Date Joined ',
+    'dateJoined',
+    'date joined',
+    'membership_date',
+    'last_contribution_date',
+  ]));
 }
 
 function splitFullName(fullName = '') {
@@ -190,6 +223,7 @@ function mapImportedMemberRow(row = {}, generatedCifNumber = '') {
   const lastName = normalizeImportText(pickImportValue(row, ['lastName', 'Last Name', 'Last name', 'Lastname', 'lastname', 'last_name', 'last'])) || splitFullName(fullName).lastName;
   const importName = fullName || [firstName, middleName, lastName].filter(Boolean).join(' ').trim();
   const sourceRow = Number(row.__rowNumber || row.__sourceRow || 0);
+  const contributionDate = getImportedContributionDate(row);
   const sourceIdentity = [
     sourceRow || '',
     sheetCifNumber || '',
@@ -200,7 +234,7 @@ function mapImportedMemberRow(row = {}, generatedCifNumber = '') {
   return {
     memberId: sheetCifNumber || generatedCifNumber || '',
     cifNumber: sheetCifNumber || generatedCifNumber || '',
-    applicationStatus: 'New',
+    applicationStatus: normalizeImportText(pickImportValue(row, ['applicationStatus', 'Application Status'])) || '',
     benefitCategory: MEMBER_BENEFIT_CATEGORIES[0],
     firstName,
     middleName,
@@ -222,17 +256,18 @@ function mapImportedMemberRow(row = {}, generatedCifNumber = '') {
     dependents: 0,
     beneficiaries: [],
     savingsAccountNo: normalizeImportText(pickImportValue(row, ['savingsAccountNo', 'Savings Account No.', 'Savings Account No', 'savings_account_no'])),
-    membershipDate: normalizeImportedDate(pickImportValue(row, ['membershipDate', 'Membership Date', 'lastContributionDate', 'Last Contribution Date', 'last contribution date', 'Date Joined', 'Membership date'])) || todayIso(),
-    signedDate: normalizeImportedDate(pickImportValue(row, ['signedDate', 'Signed Date'])) || todayIso(),
+    lastContributionDate: contributionDate,
+    membershipDate: contributionDate,
+    signedDate: normalizeImportedDate(pickImportValue(row, ['signedDate', 'Signed Date'])),
     witnessStaff: normalizeImportText(pickImportValue(row, ['witnessStaff', 'Witness / BMPC Staff'])),
-    actionTaken: 'Pending',
+    actionTaken: normalizeImportText(pickImportValue(row, ['actionTaken', 'Action Taken'])) || '',
     approvingAuthority: '',
     approvalDate: '',
     findings: '',
-    status: normalizeImportText(pickImportValue(row, ['status', 'Member Status'])) || 'Active',
+    status: normalizeImportText(pickImportValue(row, ['status', 'Member Status'])),
     photo: '',
     shareCapital: normalizeImportedNumber(pickImportValue(row, ['shareCapital', 'Savings', 'Saving', 'Savings Amount', 'Amount Saved', 'share_capital'])),
-    lastShareCapitalDepositDate: normalizeImportedDate(pickImportValue(row, ['lastShareCapitalDepositDate', 'Last Share Capital Deposit Date', 'last contribution date', 'Last Contribution Date', 'Membership Date', 'membershipDate'])) || normalizeImportedDate(pickImportValue(row, ['membershipDate', 'Membership Date', 'lastContributionDate', 'Last Contribution Date', 'last contribution date', 'Date Joined', 'Membership date'])) || todayIso(),
+    lastShareCapitalDepositDate: contributionDate || normalizeImportedDate(pickImportValue(row, ['lastShareCapitalDepositDate', 'Last Share Capital Deposit Date', 'last contribution date', 'Last Contribution Date', 'Membership Date', 'membershipDate'])),
     branch: 'Main Office',
     metadata: {
       importedFrom: 'excel',
@@ -288,6 +323,18 @@ function validateImportedMemberRow(row = {}, currentMembers = [], seenCifs = new
   const savingsRaw = String(row.Savings ?? row.savings ?? '').trim();
   const contact = normalizeImportText(row.Contact || row.contact || '');
   const lastContributionDateRaw = row['Last Contribution Date'] || row.lastContributionDate || '';
+  const contributionDateRaw = pickImportValue(row, [
+    'lastContributionDate',
+    'Last Contribution Date',
+    'last contribution date',
+    'membershipDate',
+    'Membership Date',
+    'Date Joined',
+    'Membership date',
+    'dateJoined',
+    'last_contribution_date',
+    'Date Joined ',
+  ]) || lastContributionDateRaw;
   const status = normalizeImportStatus(row.Status || row.status || '');
   const duplicatedInFile = cifNumber && seenCifs.has(cifNumber);
   const normalizedMemberName = normalizeComparableText(memberName);
@@ -317,7 +364,7 @@ function validateImportedMemberRow(row = {}, currentMembers = [], seenCifs = new
   }
 
   if (contact && !isPhone(contact)) errors.push('Invalid Contact');
-  if (lastContributionDateRaw && !normalizeImportedDate(lastContributionDateRaw)) errors.push('Invalid contribution date');
+  if (contributionDateRaw && String(contributionDateRaw).trim().toLowerCase() !== 'not set' && !normalizeImportedDate(contributionDateRaw)) errors.push('Invalid contribution date');
   if (row.Status || row.status) {
     if (!status) errors.push('Invalid member status');
   }
@@ -338,8 +385,8 @@ function validateImportedMemberRow(row = {}, currentMembers = [], seenCifs = new
       barangay,
       savings: savingsRaw,
       contact,
-      lastContributionDate: normalizeImportedDate(lastContributionDateRaw),
-      status: status || 'Active',
+      lastContributionDate: normalizeImportedDate(contributionDateRaw),
+      status: status,
     },
   };
 }
@@ -1102,7 +1149,7 @@ export default function Members() {
         const barangay = normalizeImportText(pickImportValue(row, ['Barangay / Municipality', 'Barangay', 'Municipality']));
         const savings = normalizeImportText(pickImportValue(row, ['Savings']));
         const contact = normalizeImportText(pickImportValue(row, ['Contact']));
-        const lastContribution = pickImportValue(row, ['Last Contribution Date']);
+        const lastContribution = getImportedContributionDate(row);
         const status = normalizeImportStatus(pickImportValue(row, ['Status']));
         const validation = validateImportedMemberRow({
           ...row,
@@ -1180,6 +1227,13 @@ export default function Members() {
         __rowNumber: rowNumber,
         __sourceRow: rowNumber,
       }, row.cifNumber || '');
+      const contributionDate =
+        row.lastContributionDate
+        || row.normalized?.lastContributionDate
+        || getImportedContributionDate(row.raw)
+        || member.lastContributionDate
+        || member.membershipDate
+        || '';
       return {
         ...member,
         cifNumber: row.cifNumber || member.cifNumber,
@@ -1189,11 +1243,14 @@ export default function Members() {
         barangay: row.barangay || member.barangay,
         shareCapital: normalizeImportedNumber(row.savings),
         contactNumber: row.contact || member.contactNumber,
-        membershipDate: row.lastContributionDate || member.membershipDate,
-        status: row.statusTone === 'invalid' ? 'Active' : row.normalized.status,
+        lastContributionDate: contributionDate || member.lastContributionDate || member.membershipDate,
+        membershipDate: contributionDate || member.membershipDate || member.lastContributionDate,
+        status: row.normalized.status,
         metadata: {
           ...(member.metadata || {}),
           importedFrom: 'csv_excel',
+          preserveImportedValues: true,
+          importOrder: rowNumber,
           sourceRow: rowNumber,
           sourceSheetRow: rowNumber,
           importKey: `${rowNumber}-${row.cifNumber || member.cifNumber}`,

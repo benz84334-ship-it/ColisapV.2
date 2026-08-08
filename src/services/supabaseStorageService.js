@@ -203,7 +203,55 @@ function toNumberOrNull(value) {
 
 function toDateOrNull(value) {
   if (value === '' || value === null || value === undefined) return null;
-  return value;
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return value.toISOString().slice(0, 10);
+  }
+
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    const utcDays = Math.floor(value - 25569);
+    const utcValue = utcDays * 86400;
+    const fractional = Math.round((value - Math.floor(value)) * 86400);
+    const date = new Date((utcValue + fractional) * 1000);
+    if (!Number.isNaN(date.getTime())) {
+      return date.toISOString().slice(0, 10);
+    }
+  }
+
+  const text = String(value).trim();
+  if (!text || text.toLowerCase() === 'not set') return null;
+
+  if (/^\d+(\.\d+)?$/.test(text)) {
+    const serial = Number(text);
+    const utcDays = Math.floor(serial - 25569);
+    const utcValue = utcDays * 86400;
+    const fractional = Math.round((serial - Math.floor(serial)) * 86400);
+    const date = new Date((utcValue + fractional) * 1000);
+    if (!Number.isNaN(date.getTime())) {
+      return date.toISOString().slice(0, 10);
+    }
+  }
+
+  const parts = text.split(/[\/.-]/).map((part) => part.trim()).filter(Boolean);
+  if (parts.length === 3 && parts.every((part) => /^\d+$/.test(part))) {
+    const [first, second, third] = parts.map(Number);
+    const year = third >= 1000 ? third : null;
+    if (year) {
+      const dayFirst = first > 12 || (first <= 31 && second <= 12 && first > second);
+      const month = dayFirst ? second - 1 : first - 1;
+      const day = dayFirst ? first : second;
+      const date = new Date(year, month, day);
+      if (!Number.isNaN(date.getTime())) {
+        return date.toISOString().slice(0, 10);
+      }
+    }
+  }
+
+  const parsed = new Date(text.includes('T') ? text : text.replace(' ', 'T'));
+  if (!Number.isNaN(parsed.getTime())) {
+    return parsed.toISOString().slice(0, 10);
+  }
+
+  return null;
 }
 
 function fallbackRequestKey(item = {}, index = 0) {
@@ -260,16 +308,58 @@ function dedupeRequestRows(rows = []) {
 function dedupeMemberRows(rows = []) {
   const seen = new Set();
   return rows.filter((row) => {
+    const metadata = row?.metadata && typeof row.metadata === 'object' ? row.metadata : {};
+    const fullName = [
+      row?.full_name,
+      row?.first_name,
+      row?.middle_name,
+      row?.last_name,
+      metadata?.fullName,
+    ].find((value) => String(value || '').trim()) || '';
+    const contact = String(row?.contact_number || '').trim().toLowerCase();
+    const birthdate = String(row?.birthdate || '').trim().toLowerCase();
+    const membershipDate = String(row?.last_contribution_date || row?.membership_date || '').trim().toLowerCase();
+    const importKey = String(metadata.importKey || metadata.importedMemberId || metadata.importedCifNumber || '').trim().toLowerCase();
     const key = [
-      String(row?.id || '').trim(),
-      String(row?.member_id || '').trim(),
-      String(row?.cif_number || '').trim(),
-    ].find((value) => value) || '';
+      importKey,
+      String(row?.id || '').trim().toLowerCase(),
+      String(row?.member_id || '').trim().toLowerCase(),
+      String(row?.cif_number || '').trim().toLowerCase(),
+      String(fullName).trim().toLowerCase(),
+      contact,
+      birthdate,
+      membershipDate,
+    ].filter(Boolean).join('|');
     if (!key) return true;
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
   });
+}
+
+function sortMembersByImportOrder(rows = []) {
+  return [...rows].sort((left, right) => {
+    const leftOrder = Number(left?.metadata?.importOrder ?? left?.metadata?.sourceSheetRow ?? left?.metadata?.sourceRow ?? Number.POSITIVE_INFINITY);
+    const rightOrder = Number(right?.metadata?.importOrder ?? right?.metadata?.sourceSheetRow ?? right?.metadata?.sourceRow ?? Number.POSITIVE_INFINITY);
+    if (leftOrder !== rightOrder) return leftOrder - rightOrder;
+
+    const leftCreated = Date.parse(left?.createdAt || left?.created_at || '');
+    const rightCreated = Date.parse(right?.createdAt || right?.created_at || '');
+    const leftTime = Number.isFinite(leftCreated) ? leftCreated : Number.POSITIVE_INFINITY;
+    const rightTime = Number.isFinite(rightCreated) ? rightCreated : Number.POSITIVE_INFINITY;
+    if (leftTime !== rightTime) return leftTime - rightTime;
+
+    return String(left?.id || '').localeCompare(String(right?.id || ''));
+  });
+}
+
+async function upsertRowsInChunks(table, rows, chunkSize = 25, onConflict = 'id') {
+  const filteredRows = (rows || []).filter(Boolean);
+  for (let index = 0; index < filteredRows.length; index += chunkSize) {
+    const chunk = filteredRows.slice(index, index + chunkSize);
+    const { error } = await supabase.from(table).upsert(chunk, { onConflict });
+    if (error) throw error;
+  }
 }
 
 const TABLE_SYNCERS = {
@@ -327,6 +417,7 @@ const TABLE_SYNCERS = {
       findings: item.findings ?? null,
       last_share_capital_deposit_date: toDateOrNull(item.lastShareCapitalDepositDate),
       benefit_category: item.benefitCategory ?? null,
+      import_order: toIntegerOrNull(item.importOrder ?? item.metadata?.importOrder ?? item.metadata?.sourceSheetRow ?? item.metadata?.sourceRow),
       share_capital: item.shareCapital ?? 0,
       status_override: item.statusOverride ?? null,
       status: item.status ?? 'Active',
@@ -370,12 +461,16 @@ const TABLE_SYNCERS = {
       status: row.status,
       statusOverride: row.status_override,
       branch: row.branch,
+      importOrder: row.import_order ?? row.metadata?.importOrder ?? row.metadata?.sourceSheetRow ?? row.metadata?.sourceRow ?? null,
       shareCapital: row.share_capital,
       lastShareCapitalDepositDate: row.last_share_capital_deposit_date,
       benefitCategory: row.benefit_category,
       beneficiaries: row.beneficiaries || [],
       photo: row.photo,
-      metadata: row.metadata || {},
+      metadata: {
+        ...(row.metadata || {}),
+        importOrder: row.import_order ?? row.metadata?.importOrder ?? row.metadata?.sourceSheetRow ?? row.metadata?.sourceRow ?? null,
+      },
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     }),
@@ -969,6 +1064,10 @@ async function syncTableSlice(key, value) {
     : syncer.table === 'members'
       ? dedupeMemberRows(mapped)
       : mapped;
+  if (syncer.table === 'members' && finalRows.length > 25) {
+    await upsertRowsInChunks(syncer.table, finalRows, 25, 'id');
+    return;
+  }
   const { error } = await supabase.from(syncer.table).upsert(finalRows, { onConflict: 'id' });
   if (error) throw error;
 }
@@ -1067,6 +1166,7 @@ export async function loadDatabaseFromSupabase() {
   }
   if (Array.isArray(nextDatabase.members) && nextDatabase.members.length) {
     nextDatabase.members = dedupeMemberRows(nextDatabase.members);
+    nextDatabase.members = sortMembersByImportOrder(nextDatabase.members);
   }
   nextDatabase.members = recomputeMemberShareCapital(nextDatabase.members || [], nextDatabase.shareCapitalTransactions || []);
   if (Array.isArray(nextDatabase.shareCapitalTransactions) && nextDatabase.shareCapitalTransactions.length) {
