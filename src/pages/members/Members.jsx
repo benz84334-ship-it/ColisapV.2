@@ -964,7 +964,7 @@ export default function Members() {
     showToast('Member deleted.');
   };
 
-  const handleImportedMembers = (rows = []) => {
+  const handleImportedMembers = async (rows = []) => {
     const parsedRows = Array.isArray(rows) ? rows : [];
     const seenImportIds = new Set();
     const seenImportCifs = new Set();
@@ -1016,11 +1016,11 @@ export default function Members() {
     }
 
     if (typeof data.createMembersBatch === 'function') {
-      data.createMembersBatch(importedMembers, currentUser?.username || 'System');
+      await data.createMembersBatch(importedMembers, currentUser?.username || 'System');
     } else {
-      importedMembers.forEach((member) => {
+      await Promise.all(importedMembers.map((member) => {
         data.createMember(member, currentUser?.username || 'System');
-      });
+      }));
     }
 
     showToast(`Imported ${importedMembers.length} member${importedMembers.length > 1 ? 's' : ''} into management.`, 'success');

@@ -546,7 +546,7 @@ export function DataProvider({ children }) {
   );
 
   const createMembersBatch = useCallback(
-    (membersToCreate = [], user) => {
+    async (membersToCreate = [], user) => {
       const incoming = Array.isArray(membersToCreate) ? membersToCreate.filter(Boolean) : [];
       if (!incoming.length) return;
       let finalMembersSnapshot = [];
@@ -587,9 +587,10 @@ export function DataProvider({ children }) {
         return nextMembers;
       });
 
-      saveSupabaseKey('members', finalMembersSnapshot).catch((error) => {
+      await saveSupabaseKey('members', finalMembersSnapshot).catch((error) => {
         console.error(error);
         setDatabaseError(error.message || 'Unable to sync imported members to Supabase. Changes saved locally.');
+        throw error;
       });
 
       addActivity('Imported Members', `${incoming.length} members were imported into member records.`, user);
