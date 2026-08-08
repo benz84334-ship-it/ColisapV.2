@@ -20,7 +20,7 @@ export default function ExportActions({ rows = [], columns = [], filename = 'exp
 
     try {
       const rowsParsed = await parseFile(file);
-      if (onImport) onImport(rowsParsed, file);
+      if (onImport) await onImport(rowsParsed, file);
       else if (type === 'csv') console.log('Imported CSV rows', rowsParsed);
       else console.log('Imported Excel rows', rowsParsed);
     } catch (err) {
