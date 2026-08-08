@@ -72,8 +72,8 @@ function nextMemberId(members = [], registrationDate = todayIso()) {
 
 function nextMemberRowId(members = []) {
   const year = currentYearValue();
-  const highest = nextYearlySequence(members, new RegExp(`^REQ-(${year})-(\\d{5})$`, 'i'));
-  return `REQ-${year}-${String(highest + 1).padStart(5, '0')}`;
+  const highest = nextYearlySequence(members, new RegExp(`^MEM-(${year})-(\\d{5})$`, 'i'));
+  return `MEM-${year}-${String(highest + 1).padStart(5, '0')}`;
 }
 
 function nextRandomCifNumber(members = [], date = new Date()) {
