@@ -11,7 +11,6 @@ import {
   getMembersApproachingStatusChange,
   getStatusChangeReason,
 } from '../utils/memberStatus.js';
-import { sendSms } from '../services/smsService.js';
 import {
   freshDatabase,
   loadDatabaseFromSupabase,
@@ -106,7 +105,15 @@ function isDuplicateMemberId(members = [], value = '') {
 function isDuplicateCifNumber(members = [], value = '') {
   const candidate = String(value || '').trim();
   if (!candidate) return false;
-  return members.some((member) => String(member.cifNumber || '').trim() === candidate || String(member.memberId || '').trim() === candidate);
+  return members.some((member) => String(member.cifNumber || '').trim() === candidate);
+}
+
+function findMemberByCifNumber(members = [], value = '') {
+  const candidate = String(value || '').trim();
+  if (!candidate) return null;
+  return (members || []).find((member) =>
+    String(member.cifNumber || '').trim() === candidate,
+  ) || null;
 }
 
 function placeholderPhoto() {
@@ -160,6 +167,27 @@ function withMemberPhoto(member = {}) {
       : `${String(member.barangay || '').trim()}, Antique`.replace(/^,\s*/, ''),
     photo: usesInitialsAvatar ? `https://randomuser.me/api/portraits/${photoType}/${photoNumber}.jpg` : member.photo,
   };
+}
+
+function dedupeMembers(rows = []) {
+  const seen = new Set();
+
+  return rows.filter((member) => {
+    const metadata = member?.metadata && typeof member.metadata === 'object' ? member.metadata : {};
+    const identityParts = [
+      String(member.id || '').trim().toLowerCase(),
+      String(member.memberId || '').trim().toLowerCase(),
+      String(member.cifNumber || '').trim().toLowerCase(),
+      String(metadata.importKey || '').trim().toLowerCase(),
+      String(metadata.importedMemberId || '').trim().toLowerCase(),
+      String(metadata.importedCifNumber || '').trim().toLowerCase(),
+    ].filter(Boolean);
+    const key = identityParts[0] || '';
+    if (!key) return true;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 function getActorBranch(users = [], actor) {
@@ -284,7 +312,6 @@ export function DataProvider({ children }) {
   const [isDatabaseLoading, setIsDatabaseLoading] = useState(true);
   const [databaseError, setDatabaseError] = useState('');
   const [systemDate, setSystemDate] = useState(() => todayIso());
-  const [smsDebugLogs, setSmsDebugLogs] = useState([]);
 
   useEffect(() => {
     let active = true;
@@ -325,7 +352,7 @@ export function DataProvider({ children }) {
   }, []);
 
   const membersWithComputedStatuses = useMemo(
-    () => applyComputedMemberStatuses((database.members || []).map(withMemberPhoto), database.loans || [], systemDate),
+    () => applyComputedMemberStatuses(dedupeMembers((database.members || []).map(withMemberPhoto)), database.loans || [], systemDate),
     [database.loans, database.members, systemDate],
   );
 
@@ -507,11 +534,6 @@ export function DataProvider({ children }) {
           daysUntilDormant: remainingDays,
         },
       );
-      addActivity(
-        'Dormancy Warning Sent',
-        `${memberName} was notified that 1 month remains before the account becomes Dormant.`,
-        'System',
-      );
     });
   }, [addActivity, addNotification, database.members, isDatabaseLoading, systemDate, updateKey]);
 
@@ -520,12 +542,15 @@ export function DataProvider({ children }) {
       updateKey('members', (members = []) => {
         const existingMembers = Array.isArray(members) ? members : [];
         const generatedMemberRowId = nextMemberRowId(existingMembers);
-        const nextMemberIdCode = member.memberId
-          ? (isDuplicateMemberId(existingMembers, member.memberId) ? nextMemberId(existingMembers, member.membershipDate || todayIso()) : member.memberId)
-          : nextMemberId(existingMembers, member.membershipDate || todayIso());
-        const nextCifCode = member.cifNumber
-          ? (isDuplicateCifNumber(existingMembers, member.cifNumber) ? nextCifNumber(existingMembers, member.membershipDate || todayIso()) : member.cifNumber)
-          : nextCifNumber(existingMembers, member.membershipDate || todayIso());
+        const providedIdentifier = String(member.memberId || member.cifNumber || '').trim();
+        const generatedIdentifier = nextCifNumber(existingMembers, member.membershipDate || todayIso());
+        const nextSharedCode = providedIdentifier
+          ? (
+              isDuplicateMemberId(existingMembers, providedIdentifier) || isDuplicateCifNumber(existingMembers, providedIdentifier)
+                ? generatedIdentifier
+                : providedIdentifier
+            )
+          : generatedIdentifier;
         const nextBeneficiaries = normalizeBeneficiaries(member.beneficiaries).map((beneficiary, index) => ({
           ...beneficiary,
           memberId: generatedMemberRowId,
@@ -535,8 +560,8 @@ export function DataProvider({ children }) {
           ...member,
           branch: member.branch || getActorBranch(database.users, user),
           id: generatedMemberRowId,
-          memberId: nextMemberIdCode,
-          cifNumber: nextCifCode,
+          memberId: nextSharedCode,
+          cifNumber: nextSharedCode,
           photo: member.photo || avatarForName(member.fullName),
           lastShareCapitalDepositDate: member.lastShareCapitalDepositDate || member.lastContributionDate || member.membershipDate || todayIso(),
           lastContributionDate: member.lastContributionDate || member.membershipDate || todayIso(),
@@ -567,15 +592,10 @@ export function DataProvider({ children }) {
 
       incoming.forEach((member) => {
         const importOrder = Number(member.metadata?.importOrder ?? member.metadata?.sourceSheetRow ?? member.metadata?.sourceRow ?? nextMembers.length + 1);
-        const generatedMemberRowId = nextMemberRowId(nextMembers);
-        const importedMemberId = String(member.memberId || '').trim();
-        const importedCifNumber = String(member.cifNumber || '').trim();
-        const nextMemberIdCode = importedMemberId
-          ? (isDuplicateMemberId(nextMembers, importedMemberId) ? nextMemberId(nextMembers, member.membershipDate || todayIso()) : importedMemberId)
-          : nextMemberId(nextMembers, member.membershipDate || todayIso());
-        const nextCifCode = importedCifNumber
-          ? (isDuplicateCifNumber(nextMembers, importedCifNumber) ? nextCifNumber(nextMembers, member.membershipDate || todayIso()) : importedCifNumber)
-          : nextCifNumber(nextMembers, member.membershipDate || todayIso());
+        const importRowId = `MEM-${currentYearValue(new Date(member.membershipDate || todayIso()))}-${String(importOrder).padStart(5, '0')}`;
+        const importedIdentifier = String(member.memberId || member.cifNumber || '').trim();
+        const nextSharedCode = importedIdentifier || importRowId;
+        const generatedMemberRowId = importRowId;
         const nextBeneficiaries = normalizeBeneficiaries(member.beneficiaries).map((beneficiary, index) => ({
           ...beneficiary,
           memberId: generatedMemberRowId,
@@ -585,8 +605,8 @@ export function DataProvider({ children }) {
           ...member,
           branch: member.branch || getActorBranch(database.users, user),
           id: generatedMemberRowId,
-          memberId: nextMemberIdCode,
-          cifNumber: nextCifCode,
+          memberId: nextSharedCode,
+          cifNumber: nextSharedCode,
           photo: member.photo || avatarForName(member.fullName),
           lastShareCapitalDepositDate: member.lastShareCapitalDepositDate || member.lastContributionDate || member.membershipDate || todayIso(),
           lastContributionDate: member.lastContributionDate || member.membershipDate || todayIso(),
@@ -594,9 +614,10 @@ export function DataProvider({ children }) {
           beneficiaries: nextBeneficiaries,
           metadata: {
             ...(member.metadata || {}),
-            importedMemberId: importedMemberId || null,
-            importedCifNumber: importedCifNumber || null,
+            importedMemberId: importedIdentifier || null,
+            importedCifNumber: importedIdentifier || null,
             importOrder,
+            importKey: member.metadata?.importKey || `${importOrder}-${nextSharedCode}`,
           },
           createdAt: new Date().toISOString(),
         };
@@ -636,6 +657,7 @@ export function DataProvider({ children }) {
   const createRequest = useCallback(
     async (request, user) => {
       const requests = database.requests || [];
+      const duplicateMember = findMemberByCifNumber(database.members || [], request.cifNumber);
       const nextCifValue = request.cifNumber || nextCifNumber([...(database.members || []), ...requests]);
       const requestKind = request.requestKind || request.metadata?.requestKind || 'member';
       const approvalQueue = request.approvalQueue || request.metadata?.approvalQueue || '';
@@ -643,6 +665,9 @@ export function DataProvider({ children }) {
       const claimantName = request.claimantName || request.metadata?.claimantName || '';
       const isClaimantRequest = requestKind === 'claimant' || approvalQueue === 'claimant' || request.requestType === 'Claimant Application';
       const nextRequestNumberValue = isClaimantRequest ? uniqueRequestId('CLM') : nextRequestNumber(requests);
+      const duplicateReason = duplicateMember
+        ? `Duplicate CIFK Number. ${String(request.cifNumber || nextCifValue).trim()} is already registered to an existing member.`
+        : '';
       const nextRequest = {
         ...stripRequestIdentity(request),
         id: request.id || nextRequestNumberValue,
@@ -652,16 +677,29 @@ export function DataProvider({ children }) {
         approvalQueue: isClaimantRequest ? 'claimant' : approvalQueue,
         memberId: null,
         cifNumber: nextCifValue,
-        requestStatus: 'Pending',
+        requestStatus: duplicateMember ? 'Rejected' : 'Pending',
         requestedBy: request.requestedBy || user,
         submittedAt: new Date().toISOString(),
         createdAt: new Date().toISOString(),
         claimNumber,
         claimantName,
+        rejectedAt: duplicateMember ? new Date().toISOString() : null,
+        rejectionReason: duplicateReason || request.rejectionReason || null,
+        approvalReason: duplicateMember ? null : (request.approvalReason || null),
       };
       const nextRequests = [nextRequest, ...requests];
       setDatabase((current) => ({ ...current, requests: nextRequests }));
       await saveSupabaseKey('requests', [nextRequest]);
+      if (duplicateMember) {
+        addActivity('Rejected Member Request', `${request.fullName || 'Member request'} was automatically rejected because the CIFK number already exists.`, user);
+        addNotification('Duplicate CIFK rejected', duplicateReason, 'warning', {
+          actionType: 'reject',
+          reason: duplicateReason,
+          recipient: request.requestedBy || user,
+          memberId: duplicateMember.id,
+        });
+        return;
+      }
       addActivity('Submitted Member Request', `${request.fullName || 'Member request'} was submitted.`, user);
       addNotification('New member request', `${request.fullName || 'A member request'} was sent for manager approval.`, 'info');
     },
@@ -701,6 +739,34 @@ export function DataProvider({ children }) {
       const approvedBy = approvalData.approvedBy || user || 'System';
       const now = new Date().toISOString();
       const isClaimRequest = request.requestKind === 'claimant' || request.requestType === 'Claimant Application';
+      const existingMemberByCif = !isClaimRequest
+        ? findMemberByCifNumber(database.members || [], request.cifNumber)
+        : null;
+      if (existingMemberByCif) {
+        const duplicateReason = `Duplicate CIFK Number. ${String(request.cifNumber || existingMemberByCif.cifNumber || existingMemberByCif.memberId || '').trim()} is already registered to an existing member.`;
+        const rejectedRequest = {
+          ...request,
+          requestStatus: 'Rejected',
+          rejectedAt: now,
+          rejectionReason: duplicateReason,
+          approvalReason: null,
+          updatedAt: now,
+        };
+        const requestKeys = new Set([request.id, request.requestId].filter(Boolean));
+        const nextRequests = (database.requests || []).map((item) =>
+          requestKeys.has(item.id) || requestKeys.has(item.requestId) ? rejectedRequest : item,
+        );
+        setDatabase((current) => ({ ...current, requests: nextRequests }));
+        await saveSupabaseKey('requests', [rejectedRequest]);
+        addActivity('Rejected Member Request', `${request.fullName || 'Request'} was rejected because the CIFK number already exists.`, user);
+        addNotification('Duplicate CIFK rejected', duplicateReason, 'warning', {
+          actionType: 'reject',
+          reason: duplicateReason,
+          recipient: request.requestedBy,
+          memberId: existingMemberByCif.id,
+        });
+        return;
+      }
       const matchedDeceasedMember = isClaimRequest
         ? (database.members || []).find((member) =>
             String(member.id || '').trim() === String(request.memberId || '').trim()
@@ -885,7 +951,7 @@ export function DataProvider({ children }) {
         recipient: approvedRequest.requestedBy,
       });
     },
-    [addActivity, addNotification, database.requests],
+    [addActivity, addNotification, database.members, database.requests, nextRequestNumber],
   );
 
   const rejectRequest = useCallback(
@@ -1069,109 +1135,6 @@ export function DataProvider({ children }) {
     },
     [addActivity, database.members, updateKey],
   );
-
-  useEffect(() => {
-    if (isDatabaseLoading) return undefined;
-
-    const reminders = getMembersApproachingStatusChange(visibleDatabase.members || [], visibleDatabase.loans || [], systemDate);
-    if (!reminders.length) return undefined;
-
-    const prioritizedReminders = [...reminders].sort((left, right) => {
-      const leftIsMiguel = String(left.member?.fullName || '').trim().toLowerCase() === 'miguel herrera';
-      const rightIsMiguel = String(right.member?.fullName || '').trim().toLowerCase() === 'miguel herrera';
-      if (leftIsMiguel && !rightIsMiguel) return -1;
-      if (!leftIsMiguel && rightIsMiguel) return 1;
-      return 0;
-    });
-
-    let cancelled = false;
-
-    prioritizedReminders.forEach((item) => {
-      const member = item.member || {};
-      const reminderDay = item.reminderDay;
-      const contactNumber = normalizeContactNumber(member.contactNumber);
-
-      const memberName = member.fullName || 'Member';
-      const message = `Hello ${memberName}, this is a friendly reminder from Barbaza MPC. Your account will become dormant in ${reminderDay} days if no transaction or activity is made. Please visit any Barbaza MPC branch or contact us for assistance. Thank you.`;
-      const baseLog = {
-        id: `SMS-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-        memberId: member.id || item.member?.memberId || memberName,
-        memberName,
-        contactNumber: contactNumber || 'None',
-        reminderDay,
-        message,
-        createdAt: new Date().toISOString(),
-      };
-
-      if (!member.id || !contactNumber) {
-        setSmsDebugLogs((current) => [
-          { ...baseLog, status: 'skipped', error: !member.id ? 'Missing member id' : 'Missing contact number' },
-          ...current,
-        ].slice(0, 25));
-        return;
-      }
-
-      setSmsDebugLogs((current) => [
-        { ...baseLog, status: 'pending' },
-        ...current,
-      ].slice(0, 25));
-
-      sendSms(contactNumber, message, {
-        memberId: member.id,
-        memberName: memberName,
-        reminderDay,
-      })
-        .then((result) => {
-          if (cancelled || result?.skipped) return;
-          const isLocallySaved = result?.data?.status === 'saved_locally' || result?.data?.saved_locally;
-          setSmsDebugLogs((current) => [
-            {
-              ...baseLog,
-              status: isLocallySaved ? 'saved_locally' : 'success',
-              contactNumber,
-              messageId: result?.data?.message_id || null,
-              response: result?.data || null,
-              createdAt: new Date().toISOString(),
-            },
-            ...current,
-          ].slice(0, 25));
-          addNotification(
-            isLocallySaved ? 'Dormant reminder saved locally' : 'Dormant reminder sent',
-            isLocallySaved
-              ? `${memberName} was saved locally for a ${reminderDay}-day reminder SMS.`
-              : `${memberName} received a ${reminderDay}-day reminder SMS.`,
-            isLocallySaved ? 'info' : 'success',
-          );
-          addActivity(
-            isLocallySaved ? 'Dormant Reminder Saved Locally' : 'Dormant Reminder Sent',
-            isLocallySaved
-              ? `Saved locally ${reminderDay}-day reminder SMS for ${memberName}.`
-              : `Sent ${reminderDay}-day reminder SMS to ${memberName}.`,
-            'System',
-          );
-        })
-        .catch((error) => {
-          if (cancelled) return;
-          console.error(error);
-          setSmsDebugLogs((current) => [
-            {
-              ...baseLog,
-              status: 'failed',
-              error: error?.message || 'SMS send failed',
-              response: error?.response || null,
-              contactNumber,
-              createdAt: new Date().toISOString(),
-            },
-            ...current,
-          ].slice(0, 25));
-          addNotification('Dormant reminder failed', `${memberName} reminder SMS could not be sent: ${error?.message || 'Unknown error'}.`, 'warning');
-        });
-    });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [addActivity, addNotification, isDatabaseLoading, systemDate, visibleDatabase.loans, visibleDatabase.members]);
 
   const createLoan = useCallback(
     (loan, user) => {
@@ -1534,7 +1497,6 @@ export function DataProvider({ children }) {
   const clearLocalData = useCallback(() => {
     setDatabase(freshDatabase());
     setDatabaseError('');
-    setSmsDebugLogs([]);
   }, []);
 
   const value = useMemo(
@@ -1575,7 +1537,6 @@ export function DataProvider({ children }) {
       clearLocalData,
       isDatabaseLoading,
       databaseError,
-      smsDebugLogs,
     }),
     [
       addActivity,
@@ -1603,7 +1564,6 @@ export function DataProvider({ children }) {
       clearLocalData,
       isDatabaseLoading,
       databaseError,
-      smsDebugLogs,
       restoreFromBackup,
       setTheme,
       updateCollection,

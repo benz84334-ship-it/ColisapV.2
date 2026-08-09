@@ -272,7 +272,7 @@ as $$
 declare
   current_year text := to_char(current_date, 'YYYY');
   next_row_seq bigint;
-  next_cif_seq bigint;
+  shared_code text;
 begin
   if coalesce(new.id, '') = '' or exists (
     select 1 from public.members where id = new.id
@@ -281,22 +281,22 @@ begin
     new.id := 'MEM-' || current_year || '-' || lpad(next_row_seq::text, 5, '0');
   end if;
 
-  if coalesce(new.member_id, '') = '' or exists (
-    select 1 from public.members where id = new.member_id or member_id = new.member_id
+  shared_code := coalesce(
+    nullif(trim(new.cif_number), ''),
+    nullif(trim(new.member_id), '')
+  );
+  if shared_code is null then
+    next_row_seq := nextval('public.member_import_cif_seq');
+    shared_code := 'CIFK-' || current_year || '-' || lpad(next_row_seq::text, 5, '0');
+  elsif exists (
+    select 1 from public.members where cif_number = shared_code or member_id = shared_code
   ) then
-    next_row_seq := nextval('public.member_import_row_seq');
-    new.member_id := 'M-' || current_year || '-' || lpad(next_row_seq::text, 5, '0');
+    next_row_seq := nextval('public.member_import_cif_seq');
+    shared_code := 'CIFK-' || current_year || '-' || lpad(next_row_seq::text, 5, '0');
   end if;
 
-  if coalesce(new.cif_number, '') = '' then
-    next_cif_seq := nextval('public.member_import_cif_seq');
-    new.cif_number := 'CIFK-' || current_year || '-' || lpad(next_cif_seq::text, 5, '0');
-  elsif exists (
-    select 1 from public.members where cif_number = new.cif_number or member_id = new.cif_number
-  ) then
-    next_cif_seq := nextval('public.member_import_cif_seq');
-    new.cif_number := 'CIFK-' || current_year || '-' || lpad(next_cif_seq::text, 5, '0');
-  end if;
+  new.member_id := shared_code;
+  new.cif_number := shared_code;
 
   return new;
 end;
@@ -309,9 +309,8 @@ security definer
 set search_path = public
 as $$
 declare
-  stable_member_id text;
   stable_member_row_id text;
-  stable_cif_number text;
+  stable_shared_code text;
 begin
   if coalesce(new.request_kind, '') = 'claimant' or coalesce(new.approval_queue, '') = 'claimant' or coalesce(new.request_type, '') = 'Claimant Application' then
     return new;
@@ -321,20 +320,10 @@ begin
     return new;
   end if;
 
-  stable_member_row_id := coalesce(
-    nullif(new.member_id, ''),
-    nullif(new.id, ''),
-    nullif(new.request_id, ''),
-    public.generate_member_row_id_safe()
-  );
-  stable_member_id := coalesce(
-    nullif(new.member_id, ''),
-    nullif(new.request_id, ''),
-    nullif(new.id, ''),
-    stable_member_row_id
-  );
-  stable_cif_number := coalesce(
+  stable_member_row_id := public.generate_member_row_id_safe();
+  stable_shared_code := coalesce(
     nullif(new.cif_number, ''),
+    nullif(new.member_id, ''),
     public.generate_cifk_member_number_safe()
   );
 
@@ -343,13 +332,13 @@ begin
     address, barangay, birthdate, age_years, age_months, gender, civil_status, contact_number,
     occupation, employer, office_address, religion, religion_other, dependents, savings_account_no, last_contribution_date,
     signed_date, witness_staff, action_taken, approving_authority, approval_date, findings, status,
-    status_override, branch, import_order, share_capital, last_share_capital_deposit_date, benefit_category,
+    status_override, branch, share_capital, last_share_capital_deposit_date, benefit_category,
     beneficiaries, photo, metadata, created_at, updated_at
   )
   values (
     stable_member_row_id,
-    stable_member_id,
-    stable_cif_number,
+    stable_shared_code,
+    stable_shared_code,
     coalesce(new.application_status, 'New'),
     new.first_name, new.middle_name, new.last_name, new.suffix_name, new.full_name,
     new.address, new.barangay, new.birthdate, new.age_years, new.age_months, new.gender, new.civil_status, new.contact_number,
@@ -357,7 +346,7 @@ begin
     new.savings_account_no, coalesce(new.last_contribution_date, current_date), coalesce(new.signed_date, current_date), new.witness_staff,
     coalesce(new.action_taken, 'Approved'), coalesce(new.approving_authority, new.requested_by, 'System'),
     coalesce(new.approval_date, current_date), new.findings, coalesce(new.status, 'Active'), null,
-    coalesce(new.branch, 'Main Office'), coalesce(new.import_order, null), coalesce(new.share_capital, 0), new.last_share_capital_deposit_date,
+    coalesce(new.branch, 'Main Office'), coalesce(new.share_capital, 0), new.last_share_capital_deposit_date,
     new.benefit_category, coalesce(new.beneficiaries, '[]'::jsonb), new.photo, coalesce(new.metadata, '{}'::jsonb), now(), now()
   )
   on conflict (member_id) do update set
@@ -393,7 +382,6 @@ begin
     status = excluded.status,
     status_override = excluded.status_override,
     branch = excluded.branch,
-    import_order = coalesce(excluded.import_order, public.members.import_order),
     share_capital = coalesce(nullif(excluded.share_capital, 0), public.members.share_capital),
     last_share_capital_deposit_date = excluded.last_share_capital_deposit_date,
     benefit_category = excluded.benefit_category,
@@ -477,8 +465,7 @@ begin
       findings = coalesce(new.findings, findings),
       status = coalesce(new.status, status),
       status_override = coalesce(new.status_override, status_override),
-      branch = coalesce(new.branch, branch),
-      import_order = coalesce(new.import_order, import_order),
+    branch = coalesce(new.branch, branch),
       share_capital = coalesce(new.share_capital, share_capital),
       last_share_capital_deposit_date = coalesce(new.last_share_capital_deposit_date, last_share_capital_deposit_date),
       benefit_category = coalesce(new.benefit_category, benefit_category),

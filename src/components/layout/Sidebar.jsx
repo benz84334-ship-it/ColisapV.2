@@ -31,25 +31,24 @@ export default function Sidebar({ open, onClose }) {
   const isStaff = currentUser?.role === 'Staff';
 
   const content = (
-    <div className="relative flex h-full flex-col overflow-hidden border-r border-white/10 bg-slate-950 text-white shadow-2xl">
+    <div className="relative flex h-full flex-col overflow-hidden border-r border-slate-200 bg-white text-slate-900 shadow-sm">
       <div className="pointer-events-none absolute inset-0">
-        <div className="absolute -left-20 top-0 h-56 w-56 rounded-full bg-teal-500/15 blur-3xl" />
-        <div className="absolute -right-24 top-24 h-72 w-72 rounded-full bg-blue-500/10 blur-3xl" />
+        <div className="absolute -left-20 top-0 h-56 w-56 rounded-full bg-teal-500/5 blur-3xl" />
+        <div className="absolute -right-24 top-24 h-72 w-72 rounded-full bg-emerald-500/5 blur-3xl" />
       </div>
 
-      <div className="relative flex h-20 items-center justify-between border-b border-white/10 bg-white/5 px-5 backdrop-blur">
+      <div className="relative flex h-20 items-center justify-between border-b border-slate-200 bg-white px-5">
         <div className="flex min-w-0 items-center gap-3">
-          <div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-white/10 ring-1 ring-white/10">
+          <div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl border border-slate-200 bg-slate-50">
             <BrandMark />
           </div>
           <div className="min-w-0">
-            <p className="truncate text-sm font-black tracking-wide">Colisap Monitoring</p>
-            <p className="truncate text-xs text-slate-400">{isStaff ? 'Staff Claimant Desk' : 'Barbaza MPC'}</p>
+            <p className="truncate text-sm font-bold tracking-wide text-slate-900">Colisap Monitoring</p>
           </div>
         </div>
         <button
           aria-label="Close menu"
-          className="rounded-xl p-2 text-slate-300 transition hover:bg-white/10 hover:text-white lg:hidden"
+          className="rounded-xl p-2 text-slate-500 transition hover:bg-teal-50 hover:text-teal-700 lg:hidden"
           type="button"
           onClick={onClose}
         >
@@ -68,16 +67,16 @@ export default function Sidebar({ open, onClose }) {
             <NavLink
               key={item.path}
               className={({ isActive }) =>
-                `flex min-h-12 items-center gap-3 rounded-2xl px-4 text-sm font-semibold ring-1 transition ${
+                `flex min-h-12 items-center gap-3 rounded-2xl px-4 text-sm font-medium ring-1 transition ${
                   isActive
-                    ? 'bg-teal-400 text-slate-950 ring-teal-300/70 shadow-lg shadow-teal-950/20'
-                    : 'bg-white/5 text-slate-200 ring-white/10 hover:bg-white/10 hover:text-white hover:ring-white/20'
+                    ? 'bg-[#CCFBF1] text-[#0F766E] ring-teal-200 shadow-sm'
+                    : 'bg-white text-slate-700 ring-transparent hover:bg-teal-50 hover:text-teal-700 hover:ring-teal-100'
                 }`
               }
               to={item.path}
               onClick={onClose}
             >
-              <span className="grid h-8 w-8 place-items-center rounded-xl bg-white/10">
+              <span className="grid h-8 w-8 place-items-center rounded-xl bg-transparent">
                 <Icon className="shrink-0 text-lg" />
               </span>
               <span>{item.label}</span>
@@ -86,15 +85,15 @@ export default function Sidebar({ open, onClose }) {
         })}
       </nav>
 
-      <div className="relative border-t border-white/10 bg-white/5 p-4 backdrop-blur">
-        <div className="mb-3 rounded-2xl border border-white/10 bg-slate-900/70 p-3">
-          <p className="truncate text-sm font-bold">{currentUser?.fullName || currentUser?.username}</p>
-          <p className="truncate text-xs text-slate-400">
+      <div className="relative border-t border-slate-200 bg-white p-4">
+        <div className="mb-3 rounded-2xl border border-slate-200 bg-slate-50 p-3">
+          <p className="truncate text-sm font-semibold text-slate-900">{currentUser?.fullName || currentUser?.username}</p>
+          <p className="truncate text-xs text-slate-500">
             {currentUser?.role} · {currentUser?.branch || 'Unassigned'}
           </p>
         </div>
         <button
-          className="flex min-h-11 w-full items-center gap-3 rounded-2xl border border-rose-500/20 bg-rose-500/10 px-4 text-sm font-semibold text-rose-200 transition hover:bg-rose-500/20 hover:text-white"
+          className="flex min-h-11 w-full items-center gap-3 rounded-2xl border border-rose-200 bg-white px-4 text-sm font-medium text-rose-600 transition hover:bg-rose-50 hover:text-rose-700"
           type="button"
           onClick={logout}
         >
@@ -110,7 +109,7 @@ export default function Sidebar({ open, onClose }) {
       <aside className="fixed inset-y-0 left-0 z-40 hidden w-72 lg:block">{content}</aside>
       {open ? (
         <div className="fixed inset-0 z-50 lg:hidden">
-          <button aria-label="Close menu overlay" className="absolute inset-0 bg-slate-950/60" type="button" onClick={onClose} />
+          <button aria-label="Close menu overlay" className="absolute inset-0 bg-slate-900/30" type="button" onClick={onClose} />
           <motion.aside
             animate={{ x: 0 }}
             className="absolute inset-y-0 left-0 w-[min(85vw,18rem)]"

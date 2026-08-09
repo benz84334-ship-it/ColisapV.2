@@ -92,7 +92,15 @@ export function AuthProvider({ children }) {
         return { ok: false, message: 'Invalid username, password, or inactive account.' };
       }
 
-      const nextUser = publicUser({ ...user, lastLogin: new Date().toISOString() });
+      const lastLogin = new Date().toISOString();
+      const nextUser = publicUser({ ...user, lastLogin });
+      if (user?.id) {
+        try {
+          await data.updateUser(user.id, { lastLogin }, user.username || user.fullName || 'System');
+        } catch (error) {
+          console.error('Unable to persist last login:', error);
+        }
+      }
       setCurrentUser(nextUser);
       try {
         window.sessionStorage.setItem(AUTH_SESSION_KEY, JSON.stringify(nextUser));

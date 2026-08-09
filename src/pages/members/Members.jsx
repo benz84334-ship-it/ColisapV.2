@@ -5,7 +5,6 @@ import DataTable from '../../components/tables/DataTable.jsx';
 import Badge from '../../components/ui/Badge.jsx';
 import Button from '../../components/ui/Button.jsx';
 import Modal, { ConfirmDialog } from '../../components/ui/Modal.jsx';
-import PageHeader from '../../components/ui/PageHeader.jsx';
 import FormField from '../../components/forms/FormField.jsx';
 import SearchableTextField from '../../components/forms/SearchableTextField.jsx';
 import { useAuth } from '../../context/AuthContext.jsx';
@@ -16,7 +15,6 @@ import { ANTIQUE_BARANGAYS } from '../../utils/antiqueBarangays.js';
 import { formatCurrency, formatDate, formatCifNumber, nextCifNumber, todayIso } from '../../utils/formatters.js';
 import { getComputedMemberStatus } from '../../utils/memberStatus.js';
 import { buildErrorMap, isPhone, required, uniqueBy } from '../../utils/validation.js';
-import { uploadMemberPhoto } from '../../services/supabaseFileStorage.js';
 import parseFile from '../../utils/importers.js';
 
 const APPLICATION_STATUS_OPTIONS = ['New', 'Re-application'];
@@ -69,7 +67,7 @@ const IMPORT_HEADERS = [
   'CIFK Number',
   'Member',
   'Barangay / Municipality',
-  'Savings',
+  'Contribution',
   'Contact',
   'Last Contribution Date',
   'Status',
@@ -128,12 +126,22 @@ function normalizeImportedDate(value) {
     const [first, second, third] = parts.map(Number);
     const year = third >= 1000 ? third : null;
     if (year) {
-      const dayFirst = first > 12 || (first <= 31 && second <= 12 && first > second);
-      const month = dayFirst ? second - 1 : first - 1;
-      const day = dayFirst ? first : second;
-      const parsed = new Date(year, month, day);
-      if (!Number.isNaN(parsed.getTime())) {
-        return new Date(parsed.getTime() - parsed.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+      const candidates = [
+        { month: first - 1, day: second },
+        { month: second - 1, day: first },
+      ];
+
+      for (const candidate of candidates) {
+        const parsed = new Date(year, candidate.month, candidate.day);
+        const normalized = new Date(parsed.getTime() - parsed.getTimezoneOffset() * 60000);
+        if (
+          !Number.isNaN(parsed.getTime())
+          && normalized.getFullYear() === year
+          && normalized.getMonth() === candidate.month
+          && normalized.getDate() === candidate.day
+        ) {
+          return normalized.toISOString().slice(0, 10);
+        }
       }
     }
   }
@@ -266,7 +274,7 @@ function mapImportedMemberRow(row = {}, generatedCifNumber = '') {
     findings: '',
     status: normalizeImportText(pickImportValue(row, ['status', 'Member Status'])),
     photo: '',
-    shareCapital: normalizeImportedNumber(pickImportValue(row, ['shareCapital', 'Savings', 'Saving', 'Savings Amount', 'Amount Saved', 'share_capital'])),
+    shareCapital: normalizeImportedNumber(pickImportValue(row, ['shareCapital', 'Contribution', 'Saving', 'Contribution Amount', 'Amount Contributed', 'share_capital'])),
     lastShareCapitalDepositDate: contributionDate || normalizeImportedDate(pickImportValue(row, ['lastShareCapitalDepositDate', 'Last Share Capital Deposit Date', 'last contribution date', 'Last Contribution Date', 'Membership Date', 'membershipDate'])),
     branch: 'Main Office',
     metadata: {
@@ -320,7 +328,7 @@ function validateImportedMemberRow(row = {}, currentMembers = [], seenCifs = new
   const cifNumber = normalizeImportText(row.cifNumber || row['CIFK Number'] || row['CIFK No.'] || row['CIFK No'] || row.CIFK || '');
   const memberName = normalizeImportText(row.member || row.Member || '');
   const barangay = normalizeImportText(row['Barangay / Municipality'] || row.barangay || '');
-  const savingsRaw = String(row.Savings ?? row.savings ?? '').trim();
+  const savingsRaw = String(row.Contribution ?? row.contribution ?? row.Savings ?? row.savings ?? '').trim();
   const contact = normalizeImportText(row.Contact || row.contact || '');
   const lastContributionDateRaw = row['Last Contribution Date'] || row.lastContributionDate || '';
   const contributionDateRaw = pickImportValue(row, [
@@ -360,7 +368,7 @@ function validateImportedMemberRow(row = {}, currentMembers = [], seenCifs = new
 
   if (savingsRaw) {
     const parsedSavings = Number(String(savingsRaw).replace(/,/g, ''));
-    if (!Number.isFinite(parsedSavings)) errors.push('Savings must be numeric');
+    if (!Number.isFinite(parsedSavings)) errors.push('Contribution must be numeric');
   }
 
   if (contact && !isPhone(contact)) errors.push('Invalid Contact');
@@ -452,7 +460,7 @@ const blankMember = {
   findings: '',
   status: 'Pending',
   photo: '',
-  shareCapital: 5000,
+  shareCapital: 0,
   lastShareCapitalDepositDate: todayIso(),
 };
 
@@ -491,7 +499,6 @@ function CustomerInformationFile({ member }) {
           <h3 className="mt-1 text-2xl font-black tracking-normal text-slate-950 dark:text-white">{member.fullName}</h3>
           <p className="mt-1 text-sm font-semibold text-slate-500 dark:text-slate-400">CIFK No. {formatCifNumber(member)}</p>
         </div>
-        <img alt="" className="h-28 w-28 rounded-xl object-cover" src={member.photo} />
       </div>
 
       <Section title="Customer Identification">
@@ -834,7 +841,6 @@ export default function Members() {
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState(blankMember);
-  const [photoFile, setPhotoFile] = useState(null);
   const [isSaving, setIsSaving] = useState(false);
   const [importModalOpen, setImportModalOpen] = useState(false);
   const [importRows, setImportRows] = useState([]);
@@ -883,18 +889,15 @@ export default function Members() {
         className: 'min-w-52',
         cellClassName: 'min-w-52',
         render: (row) => (
-          <div className="flex min-w-0 items-center gap-3">
-            <img alt="" className="h-10 w-10 rounded-lg object-cover" src={row.photo} />
-            <div className="min-w-0">
-              <p className="leading-tight font-bold text-slate-950 dark:text-white">{row.fullName}</p>
-            </div>
+          <div className="min-w-0">
+            <p className="leading-tight font-semibold text-slate-900">{row.fullName}</p>
           </div>
         ),
       },
       { key: 'barangay', label: 'Barangay / Municipality', className: 'min-w-52 max-w-64', cellClassName: 'min-w-52 max-w-64 whitespace-normal', render: (row) => barangayOnly(row.barangay) },
       {
         key: 'shareCapital',
-        label: 'Savings',
+        label: 'Contribution',
         className: 'whitespace-nowrap',
         cellClassName: 'whitespace-nowrap',
         render: (row) => formatCurrency(Number(row.shareCapital || 0)),
@@ -930,9 +933,8 @@ export default function Members() {
             ...memberForForm(member, today, scopedData.members),
             memberId: nextMemberId(scopedData.members, today),
             cifNumber: generatedCifNumber,
-          },
+        },
     );
-    setPhotoFile(null);
     setErrors({});
     setModalOpen(true);
   };
@@ -1053,7 +1055,7 @@ export default function Members() {
   const validate = () => {
     const nextErrors = buildErrorMap([
       { field: 'memberId', valid: required(currentForm.memberId), message: 'CIFK number is required.' },
-      { field: 'memberId', valid: uniqueBy(scopedData.members, 'memberId', currentForm.memberId, editing?.id), message: 'CIFK number already exists.' },
+      { field: 'memberId', valid: uniqueBy(scopedData.members, 'cifNumber', currentForm.memberId, editing?.id), message: 'CIFK number already exists.' },
       { field: 'firstName', valid: required(currentForm.firstName), message: 'First name is required.' },
       { field: 'lastName', valid: required(currentForm.lastName), message: 'Last name is required.' },
       { field: 'address', valid: required(currentForm.address), message: 'Present address is required.' },
@@ -1074,10 +1076,8 @@ export default function Members() {
 
     setIsSaving(true);
     try {
-      const photoUrl = photoFile ? await uploadMemberPhoto(photoFile, currentForm.memberId || editing?.id) : currentForm.photo;
       const generatedCifNumber = nextCifNumber(scopedData.members);
       const nextMember = buildMemberPayload(currentForm, {
-        photoUrl,
         status: isApprover ? computedStatus : 'Pending',
         branch: currentForm.branch || currentUser?.branch || 'Main Office',
         cifNumber: generatedCifNumber,
@@ -1108,7 +1108,6 @@ export default function Members() {
         data.createMember(nextMember, currentUser.username);
         showToast('Member profile created.');
       }
-      setPhotoFile(null);
       setModalOpen(false);
       setRequestTarget(null);
       setReturnedDraft(blankMember);
@@ -1147,7 +1146,7 @@ export default function Members() {
         const sheetCif = normalizeImportText(pickImportValue(row, ['CIFK Number', 'CIFK No.', 'CIFK No', 'CIFK', 'cifNumber']));
         const memberName = normalizeImportText(pickImportValue(row, ['Member', 'Member Name', 'Full Name', 'Name']));
         const barangay = normalizeImportText(pickImportValue(row, ['Barangay / Municipality', 'Barangay', 'Municipality']));
-        const savings = normalizeImportText(pickImportValue(row, ['Savings']));
+        const savings = normalizeImportText(pickImportValue(row, ['Contribution', 'Savings']));
         const contact = normalizeImportText(pickImportValue(row, ['Contact']));
         const lastContribution = getImportedContributionDate(row);
         const status = normalizeImportStatus(pickImportValue(row, ['Status']));
@@ -1156,7 +1155,7 @@ export default function Members() {
           cifNumber: sheetCif,
           member: memberName,
           barangay,
-          Savings: savings,
+          Contribution: savings,
           Contact: contact,
           'Last Contribution Date': lastContribution,
           Status: status,
@@ -1340,26 +1339,13 @@ export default function Members() {
     ),
     [data.requests],
   );
-  const claimantRequestRows = useMemo(
-    () => (data.requests || []).filter((request) =>
-      isClaimantRequest(request)
-      && String(request.requestStatus || '').toLowerCase() !== 'approved',
-    ),
-    [data.requests],
-  );
   const returnedRequests = useMemo(
     () => (data.requests || []).filter((request) => request.requestStatus === 'Returned' && (!currentUser?.username || request.requestedBy === currentUser.username)),
     [currentUser?.username, data.requests],
   );
-  const activeClaimantApplication = useMemo(
-    () => requestTarget?.metadata?.claimantApplication || requestTarget?.claimantApplication || {},
-    [requestTarget],
-  );
-  const activeClaimantDeceased = activeClaimantApplication.deceased || {};
-  const isClaimantApprovalItem = isRequestApprovalPage && isClaimantRequest(requestTarget);
   const formContent = (
     <div className="space-y-5">
-      {!isClaimantApprovalItem ? (
+      {true ? (
         <>
       <Section title="I. Membership Application">
         <div className="grid gap-4 md:grid-cols-4">
@@ -1406,41 +1392,7 @@ export default function Members() {
           )}
           <FormField className="md:col-span-2" disabled={isRequestApprovalPage} label="No. of Dependents" min="0" step="1" type="number" value={currentForm.dependents} onChange={(event) => (requestTarget ? setReturnedDraft((current) => ({ ...current, dependents: Number(event.target.value) })) : setForm((current) => ({ ...current, dependents: Number(event.target.value) })))} />
           <FormField className="md:col-span-4" disabled={isRequestApprovalPage} label="Office Address" value={currentForm.officeAddress} onChange={(event) => (requestTarget ? setReturnedDraft((current) => ({ ...current, officeAddress: event.target.value })) : setForm((current) => ({ ...current, officeAddress: event.target.value })))} />
-          <FormField className="md:col-span-2" disabled={isRequestApprovalPage} label="Savings" min="0" step="0.01" type="number" value={currentForm.shareCapital ?? ''} onChange={(event) => (requestTarget ? setReturnedDraft((current) => ({ ...current, shareCapital: event.target.value === '' ? '' : Number(event.target.value) })) : setForm((current) => ({ ...current, shareCapital: event.target.value === '' ? '' : Number(event.target.value) })))} />
-          {isRequestApprovalPage ? (
-            <div className="md:col-span-2">
-              <p className="mb-1.5 text-sm font-semibold text-slate-700 dark:text-slate-200">Member Photo</p>
-              {currentForm.photo ? (
-                <div className="flex items-center gap-3 rounded-lg border border-teal-200 bg-teal-50 p-3 dark:border-teal-500/30 dark:bg-teal-500/10">
-                  <img alt="Member photo preview" className="h-14 w-14 rounded-lg object-cover" src={currentForm.photo} />
-                  <div className="min-w-0 flex-1">
-                    <p className="text-xs font-bold uppercase tracking-normal text-teal-700 dark:text-teal-200">Current Photo</p>
-                    <p className="truncate text-sm font-semibold text-slate-900 dark:text-white">Latest uploaded image for review</p>
-                  </div>
-                  <a
-                    className="inline-flex shrink-0 items-center rounded-lg border border-teal-300 px-3 py-1 text-xs font-semibold text-teal-800 transition hover:bg-white dark:border-teal-400/30 dark:text-teal-100 dark:hover:bg-teal-500/10"
-                    href={currentForm.photo}
-                    rel="noreferrer"
-                    target="_blank"
-                  >
-                    View
-                  </a>
-                </div>
-              ) : (
-                <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400">
-                  No member photo uploaded yet.
-                </div>
-              )}
-            </div>
-          ) : (
-            <FormField
-              accept="image/png,image/jpeg,image/webp,image/gif"
-              className="md:col-span-2"
-              label="Member Photo"
-              type="file"
-              onChange={(event) => setPhotoFile(event.target.files?.[0] || null)}
-            />
-          )}
+          <FormField className="md:col-span-2" disabled={isRequestApprovalPage} inputClassName="appearance-textfield" label="Contribution" inputMode="decimal" type="text" value={currentForm.shareCapital ?? 0} onChange={(event) => (requestTarget ? setReturnedDraft((current) => ({ ...current, shareCapital: event.target.value === '' ? 0 : Number(event.target.value) })) : setForm((current) => ({ ...current, shareCapital: event.target.value === '' ? 0 : Number(event.target.value) })))} />
         </div>
       </Section>
 
@@ -1502,49 +1454,6 @@ export default function Members() {
 
       {isRequestApprovalPage ? (
         <>
-          {isClaimantRequest(requestTarget) ? (
-            <>
-              <Section title="Claimant Application Summary">
-                <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                  <DetailItem label="Claim Number" value={requestTarget?.claimNumber || activeClaimantApplication.claimNumber} />
-                  <DetailItem label="Claimant Name" value={requestTarget?.claimantName || activeClaimantApplication.claimantName} />
-                  <DetailItem label="Request Type" value="Claimant Application" />
-                  <DetailItem label="Relationship" value={activeClaimantApplication.relationshipToDeceased} />
-                  <DetailItem label="Contact Number" value={activeClaimantApplication.contactNumber} />
-                  <DetailItem label="Complete Address" value={activeClaimantApplication.claimantAddress} />
-                  <DetailItem label="Valid ID Type" value={activeClaimantApplication.validIdType} />
-                  <DetailItem label="Valid ID Number" value={activeClaimantApplication.validIdNumber} />
-                  <DetailItem label="Registered Beneficiary" value={activeClaimantApplication.registeredBeneficiary} />
-                  <DetailItem label="Claimant's Signature" value={activeClaimantApplication.claimantSignature} />
-                  <DetailItem label="Date Signed" value={formatDate(activeClaimantApplication.dateSigned || requestTarget?.signedDate)} />
-                  <DetailItem label="Required Documents" value={Array.isArray(activeClaimantApplication.docs) ? activeClaimantApplication.docs.join(', ') : 'None'} />
-                </div>
-                <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                  <DetailItem label="Deceased Member" value={activeClaimantDeceased.fullName || [activeClaimantDeceased.firstName, activeClaimantDeceased.middleName, activeClaimantDeceased.lastName, activeClaimantDeceased.suffix].filter(Boolean).join(' ')} />
-                  <DetailItem label="CIFK Number" value={activeClaimantDeceased.cifNumber || activeClaimantDeceased.memberId} />
-                  <DetailItem label="Date of Death" value={formatDate(activeClaimantDeceased.dateOfDeath)} />
-                  <DetailItem label="Coverage Status" value={activeClaimantDeceased.coverageStatus} />
-                  <DetailItem label="Benefit Category" value={activeClaimantDeceased.benefitCategory} />
-                  <DetailItem label="Place of Death" value={activeClaimantDeceased.placeOfDeath} />
-                  <DetailItem label="Cause of Death" value={activeClaimantDeceased.causeOfDeath} />
-                  <DetailItem label="Date of Burial" value={formatDate(activeClaimantDeceased.dateOfBurial)} />
-                  <DetailItem label="Place of Burial" value={activeClaimantDeceased.placeOfBurial} />
-                  <DetailItem label="Funeral Home" value={activeClaimantDeceased.funeralHome} />
-                  <DetailItem label="Total Funeral Expenses" value={formatCurrency(activeClaimantDeceased.totalFuneralExpenses || 0)} />
-                </div>
-              </Section>
-              <Section title="VI. Certification">
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <p className="sm:col-span-2 text-sm text-slate-600 dark:text-slate-300">
-                    I certify that the claimant information and supporting documents have been reviewed for approval.
-                  </p>
-                  <FormField className="sm:col-span-2" label="Verified By" readOnly value={currentUser?.fullName || currentUser?.username || ''} />
-                  <FormField className="sm:col-span-2" label="Approved By" readOnly value={currentUser?.fullName || currentUser?.username || ''} />
-                  <FormField className="sm:col-span-2" as="textarea" label="Reason" placeholder="Type the reason for approving, rejecting, or returning this request..." value={reviewReason} onChange={(event) => setReviewReason(event.target.value)} />
-                </div>
-              </Section>
-            </>
-          ) : null}
         </>
       ) : null}
 
@@ -1553,40 +1462,28 @@ export default function Members() {
 
   return (
     <div className="space-y-6">
-      <PageHeader
-        eyebrow={isRequestApprovalPage ? 'Review Queue' : isRequestMemberPage ? 'Member Intake' : 'Member Registry'}
-        title={isRequestApprovalPage ? 'Request Approval' : isRequestMemberPage ? 'Request Member' : 'Member Management'}
-        description={isRequestApprovalPage
-          ? 'Review staff-submitted member requests and claimant applications with a clean approval flow for approvers.'
-          : isRequestMemberPage
-            ? 'Submit a new cooperative member request with a guided, professional form.'
-            : 'Register, review, approve, reject, search, export, and inspect cooperative member profiles.'}
-      />
-
-      
-
       {isRequestMemberPage ? (
-        <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-950">
-          <div className="mb-6 flex flex-col gap-3 border-b border-slate-200 pb-4 dark:border-slate-800">
-            <p className="text-xs font-black uppercase tracking-[0.2em] text-teal-700 dark:text-teal-200">Member Intake</p>
-            <h2 className="text-2xl font-black text-slate-950 dark:text-white">New Member Request Form</h2>
-            <p className="text-sm text-slate-500 dark:text-slate-400">Complete the same member details here to create a new request and save it to Supabase.</p>
+        <section className="overflow-hidden rounded-2xl border border-[#E2E8F0] bg-white shadow-[0_1px_3px_rgba(0,0,0,0.04)]">
+          <div className="mb-6 flex flex-col gap-3 border-b border-[#E2E8F0] bg-[#F8FAFC] p-6">
+            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-teal-700">Member Intake</p>
+            <h2 className="text-2xl font-bold text-slate-900">New Member Request Form</h2>
+            <p className="text-sm text-slate-500">Complete the same member details here to create a new request and save it to Supabase.</p>
           </div>
           {formContent}
           {returnedRequests.length ? (
-            <div className="mt-6 rounded-lg border border-amber-200 bg-amber-50 p-4 dark:border-amber-500/20 dark:bg-amber-500/10">
+            <div className="mt-6 rounded-xl border border-amber-200 bg-amber-50 p-4">
               <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
                 <div>
-                  <h3 className="text-sm font-bold text-amber-950 dark:text-amber-100">Returned for correction</h3>
-                  <p className="text-xs text-amber-800 dark:text-amber-200">Open the returned application form, review the missing requirements, and resubmit it.</p>
+                  <h3 className="text-sm font-semibold text-amber-950">Returned for correction</h3>
+                  <p className="text-xs text-amber-800">Open the returned application form, review the missing requirements, and resubmit it.</p>
                 </div>
               </div>
               <div className="mt-4 space-y-3">
                 {returnedRequests.map((request) => (
-                  <div key={request.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-white p-3 shadow-sm dark:bg-slate-950">
+                  <div key={request.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
                     <div>
-                      <p className="font-bold text-slate-950 dark:text-white">{request.fullName}</p>
-                      <p className="text-xs text-slate-500 dark:text-slate-400">
+                      <p className="font-semibold text-slate-900">{request.fullName}</p>
+                      <p className="text-xs text-slate-500">
                         {request.cifNumber || request.memberId || '—'} · Returned: {formatDate(request.returnedAt)} · Reason: {request.returnReason || 'Please review missing requirements.'}
                       </p>
                     </div>
@@ -1620,51 +1517,19 @@ export default function Members() {
         <>
           {isRequestApprovalPage ? (
             <div className="space-y-6">
-              <section className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-950">
-                <div className="border-b border-slate-200 bg-gradient-to-r from-slate-950 via-slate-900 to-teal-900 px-5 py-4 dark:border-slate-800">
-                  <p className="text-xs font-black uppercase tracking-[0.2em] text-teal-200">Queue 1</p>
-                  <h3 className="mt-1 text-lg font-black text-white">Member Request Approval</h3>
-                  <p className="mt-1 text-sm text-slate-200">Pending member requests awaiting approval.</p>
-                </div>
-                <div className="p-4 sm:p-5">
-                  <DataTable
-                    actions={memberRequestRows.length ? (row) => (
-                      <div className="flex justify-end gap-2">
-                        <Button className="px-3" icon={FiEdit2} variant="secondary" onClick={() => openRequest(row)}>
-                          Review
-                        </Button>
-                      </div>
-                    ) : null}
-                    columns={requestColumns}
-                    data={memberRequestRows}
-                    searchFields={['cifNumber', 'fullName', 'requestedByName', 'benefitCategory']}
-                    title=""
-                  />
-                </div>
-              </section>
-
-              <section className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-950">
-                <div className="border-b border-slate-200 bg-gradient-to-r from-teal-950 via-teal-900 to-cyan-900 px-5 py-4 dark:border-slate-800">
-                  <p className="text-xs font-black uppercase tracking-[0.2em] text-cyan-200">Queue 2</p>
-                  <h3 className="mt-1 text-lg font-black text-white">Claimant Application Approval</h3>
-                  <p className="mt-1 text-sm text-slate-200">Pending claimant applications awaiting approval.</p>
-                </div>
-                <div className="p-4 sm:p-5">
-                  <DataTable
-                    actions={claimantRequestRows.length ? (row) => (
-                      <div className="flex justify-end gap-2">
-                        <Button className="px-3" icon={FiEdit2} variant="secondary" onClick={() => openRequest(row)}>
-                          Review
-                        </Button>
-                      </div>
-                    ) : null}
-                    columns={requestColumns}
-                    data={claimantRequestRows}
-                    searchFields={['claimNumber', 'fullName', 'requestedByName', 'claimantName', 'memberName']}
-                    title=""
-                  />
-                </div>
-              </section>
+              <DataTable
+                actions={memberRequestRows.length ? (row) => (
+                  <div className="flex justify-end gap-2">
+                    <Button className="px-3" icon={FiEdit2} variant="secondary" onClick={() => openRequest(row)}>
+                      Review
+                    </Button>
+                  </div>
+                ) : null}
+                columns={requestColumns}
+                data={memberRequestRows}
+                searchFields={['cifNumber', 'fullName', 'requestedByName', 'benefitCategory']}
+                title=""
+              />
             </div>
           ) : (
           <DataTable
@@ -1692,7 +1557,7 @@ export default function Members() {
                   <Button icon={FiUpload} variant="secondary" onClick={() => csvInputRef.current?.click()} disabled={isImporting}>
                     Import CSV
                   </Button>
-                  <Button icon={FiFile} variant="secondary" onClick={() => excelInputRef.current?.click()} disabled={isImporting}>
+                  <Button icon={FiFile} onClick={() => excelInputRef.current?.click()} disabled={isImporting}>
                     Import Excel
                   </Button>
                 </div>
@@ -1712,6 +1577,7 @@ export default function Members() {
               columns={columns}
               data={scopedData.members}
               description={isAdmin ? 'Admin: all branches with edit and delete access.' : 'Manage member profiles.'}
+              initialSortKey={null}
               filters={[
                 { key: 'benefitCategory', label: 'Benefit Category', options: MEMBER_BENEFIT_CATEGORIES },
                 { key: 'status', label: 'Status', options: MEMBER_STATUSES },
@@ -1749,7 +1615,7 @@ export default function Members() {
               <div className="grid gap-3 sm:grid-cols-4">
                 <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-900">
                   <p className="text-xs font-bold uppercase text-slate-500">Total Rows</p>
-                  <p className="text-2xl font-black text-slate-950 dark:text-white">{importSummary.total}</p>
+                  <p className="text-2xl font-bold text-slate-900">{importSummary.total}</p>
                 </div>
                 <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 dark:border-emerald-500/20 dark:bg-emerald-500/10">
                   <p className="text-xs font-bold uppercase text-emerald-700 dark:text-emerald-200">Valid</p>
@@ -1767,37 +1633,36 @@ export default function Members() {
 
               <div className="overflow-x-auto rounded-2xl border border-slate-200 dark:border-slate-800">
                 <table className="min-w-full text-left text-sm">
-                  <thead className="bg-slate-50 text-xs uppercase text-slate-500 dark:bg-slate-900 dark:text-slate-400">
+                  <thead className="bg-[#F8FAFC] text-xs uppercase text-slate-500">
                     <tr>
-                      <th className="px-4 py-3">CIFK Number</th>
-                      <th className="px-4 py-3">Member</th>
-                      <th className="px-4 py-3">Barangay / Municipality</th>
-                      <th className="px-4 py-3">Savings</th>
-                      <th className="px-4 py-3">Contact</th>
-                      <th className="px-4 py-3">Last Contribution Date</th>
-                      <th className="px-4 py-3">Status</th>
-                      <th className="px-4 py-3">Validation</th>
+                      <th className="px-6 py-5">CIFK Number</th>
+                      <th className="px-6 py-5">Member</th>
+                      <th className="px-6 py-5">Barangay / Municipality</th>
+                      <th className="px-6 py-5">Contribution</th>
+                      <th className="px-6 py-5">Contact</th>
+                      <th className="px-6 py-5">Last Contribution Date</th>
+                      <th className="px-6 py-5">Status</th>
+                      <th className="px-6 py-5">Validation</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                  <tbody className="divide-y divide-[#E2E8F0]">
                     {importRows.map((row) => (
                       <tr
                         key={`${row.rowNumber}-${row.cifNumber || row.member || ''}`}
-                        className={row.statusTone === 'invalid' ? 'bg-rose-50/60 dark:bg-rose-500/10' : row.statusTone === 'warning' ? 'bg-amber-50/60 dark:bg-amber-500/10' : ''}
+                        className={row.statusTone === 'invalid' ? 'bg-rose-50/40' : row.statusTone === 'warning' ? 'bg-amber-50/40' : ''}
                       >
-                        <td className="px-4 py-3 whitespace-nowrap">{row.cifNumber || 'Will generate'}</td>
-                        <td className="px-4 py-3 whitespace-nowrap font-semibold">{row.member || 'Missing member name'}</td>
-                        <td className="px-4 py-3">{row.barangay || '—'}</td>
-                        <td className="px-4 py-3 whitespace-nowrap">{row.savings ? Number(String(row.savings).replace(/,/g, '')).toLocaleString('en-PH') : '0'}</td>
-                        <td className="px-4 py-3 whitespace-nowrap">{row.contact || '—'}</td>
-                        <td className="px-4 py-3 whitespace-nowrap">{row.lastContributionDate ? formatDate(row.lastContributionDate) : '—'}</td>
-                        <td className="px-4 py-3 whitespace-nowrap">{row.normalized?.status || 'Active'}</td>
-                        <td className="px-4 py-3">
+                        <td className="px-6 py-5 whitespace-nowrap">{row.cifNumber || 'Will generate'}</td>
+                        <td className="px-6 py-5 whitespace-nowrap font-semibold">{row.member || 'Missing member name'}</td>
+                        <td className="px-6 py-5">{row.barangay || '—'}</td>
+                        <td className="px-6 py-5 whitespace-nowrap">{row.savings ? Number(String(row.savings).replace(/,/g, '')).toLocaleString('en-PH') : '0'}</td>
+                        <td className="px-6 py-5 whitespace-nowrap">{row.lastContributionDate ? formatDate(row.lastContributionDate) : '—'}</td>
+                        <td className="px-6 py-5 whitespace-nowrap">{row.normalized?.status || 'Active'}</td>
+                        <td className="px-6 py-5">
                           <div className="flex flex-col gap-1">
                             <Badge tone={row.statusTone === 'valid' ? 'success' : row.statusTone === 'warning' ? 'warning' : 'danger'}>
                               {row.statusTone === 'valid' ? 'Valid' : row.statusTone === 'warning' ? 'Warning' : 'Invalid'}
                             </Badge>
-                            <p className="text-xs text-slate-500 dark:text-slate-400">{row.validation}</p>
+                            <p className="text-xs text-slate-500">{row.validation}</p>
                           </div>
                         </td>
                       </tr>
@@ -1857,7 +1722,7 @@ export default function Members() {
             }
           >
             {formContent}
-            {isRequestApprovalPage && !isClaimantApprovalItem ? (
+            {isRequestApprovalPage ? (
               <FormField
                 as="textarea"
                 label="Reason"
@@ -1881,3 +1746,6 @@ export default function Members() {
     </div>
   );
 }
+
+
+

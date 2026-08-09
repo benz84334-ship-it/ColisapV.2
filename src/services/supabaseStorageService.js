@@ -456,6 +456,7 @@ const TABLE_SYNCERS = {
       dependents: row.dependents,
       savingsAccountNo: row.savings_account_no,
       lastContributionDate: row.last_contribution_date ?? row.membership_date ?? null,
+      membershipDate: row.last_contribution_date ?? row.membership_date ?? null,
       signedDate: row.signed_date,
       witnessStaff: row.witness_staff,
       actionTaken: row.action_taken,

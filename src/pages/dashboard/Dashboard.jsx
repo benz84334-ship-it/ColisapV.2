@@ -1,5 +1,4 @@
 import { useState } from 'react';
-import { Link } from 'react-router-dom';
 import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { FiAlertTriangle, FiFileText, FiUserCheck, FiUserMinus, FiUsers } from 'react-icons/fi';
 import StatCard from '../../components/cards/StatCard.jsx';
@@ -7,25 +6,18 @@ import ChartCard from '../../components/charts/ChartCard.jsx';
 import Badge from '../../components/ui/Badge.jsx';
 import Button from '../../components/ui/Button.jsx';
 import Modal from '../../components/ui/Modal.jsx';
-import PageHeader from '../../components/ui/PageHeader.jsx';
 import { useAuth } from '../../context/AuthContext.jsx';
 import { useData } from '../../context/DataContext.jsx';
 import { buildDashboardData, getBranchScopedData } from '../../utils/analytics.js';
-import { formatCurrency, formatDate, formatDateTime, todayIso } from '../../utils/formatters.js';
+import { formatCurrency, formatDateTime, todayIso } from '../../utils/formatters.js';
 import { getMembersApproachingStatusChange } from '../../utils/memberStatus.js';
 import { MEMBER_BENEFIT_CATEGORIES, ROLES, normalizeBenefitCategory } from '../../utils/constants.js';
 
-function isSameIsoDate(value, isoDate) {
-  if (!value || !isoDate) return false;
-  return String(value).slice(0, 10) === String(isoDate).slice(0, 10);
-}
-
-function getLatestSmsDebugEntry(entries = [], memberId) {
-  return entries
-    .filter((entry) => entry?.memberId === memberId)
-    .slice()
-    .sort((left, right) => new Date(right.createdAt || right.updatedAt || 0) - new Date(left.createdAt || left.updatedAt || 0))[0];
-}
+const MEMBER_STATUS_LEGEND = [
+  { value: 'Active', color: '#16A34A' },
+  { value: 'Inactive', color: '#F59E0B' },
+  { value: 'Dormant', color: '#DC2626' },
+];
 
 export default function Dashboard() {
   const data = useData();
@@ -57,6 +49,7 @@ export default function Dashboard() {
   const memberStatusAxisMax = Math.max(100, (Math.floor(largestStatusTotal / 100) + 1) * 100);
   const memberStatusTicks = Array.from({ length: memberStatusAxisMax / 20 + 1 }, (_, index) => index * 20);
   const membersApproachingStatusChange = getMembersApproachingStatusChange(scopedData.members, scopedData.loans);
+  const [showAllStatusChanges, setShowAllStatusChanges] = useState(false);
   const memberAccountRows = (records, kind) => Object.values(records.reduce((groups, record) => {
     const member = scopedData.members.find((item) => item.id === record.memberId);
     const key = record.memberId || record.memberName;
@@ -112,131 +105,113 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-6">
-      <PageHeader
-        eyebrow="Barbaza Multi-Purpose Cooperative"
-        title="Colisap Monitoring"
-        description="Summary of membership status, released packages, collections, and accounts requiring attention."
-        actions={(
-          <>
-            {isAdmin || isManager ? (
-              <Link to="/reports">
-                <Button icon={FiFileText} variant="secondary">
-                  Generate Report
-                </Button>
-              </Link>
-            ) : null}
-          </>
-        )}
-      />
-
-      <div className={`rounded-3xl border px-5 py-4 shadow-sm ${isAdmin ? 'border-violet-200 bg-violet-50 dark:border-violet-900 dark:bg-violet-500/10' : 'border-blue-200 bg-blue-50 dark:border-blue-900 dark:bg-blue-500/10'}`}>
-        <p className={`text-sm font-black ${isAdmin ? 'text-violet-800 dark:text-violet-200' : 'text-blue-800 dark:text-blue-200'}`}>
-          {isAdmin ? 'Administrator workspace — all branches and full system control' : `Manager workspace — ${currentUser?.branch || 'assigned branch'} reporting and monitoring`}
-        </p>
-        <p className="mt-1 text-xs text-slate-600 dark:text-slate-300">
-          {isAdmin ? 'You can manage member records, user accounts, settings, and organization-wide reports.' : 'You can review branch records and generate reports; user administration, settings, and destructive record actions are restricted.'}
-        </p>
-      </div>
-
-      {visibleWidgets.stats ? (
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        {visibleWidgets.stats ? (
+        <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
           <StatCard accent="teal" icon={FiUsers} title="Total Members" value={dashboard.stats.totalMembers} />
-          <StatCard accent="violet" icon={FiUsers} title="40K Availments" value={fortyKMembers.length} />
-          <StatCard accent="violet" icon={FiUsers} title="60K Availments" value={sixtyKMembers.length} />
           <StatCard accent="blue" icon={FiUserCheck} title="Active Members" value={activeMembers} />
           <StatCard accent="green" icon={FiUserMinus} title="Inactive Members" value={inactiveMembers} />
           <StatCard accent="red" icon={FiAlertTriangle} title="Dormant Members" value={dormantMembers} />
+          <StatCard accent="violet" icon={FiUsers} title="40K Availments" value={fortyKMembers.length} />
+          <StatCard accent="violet" icon={FiUsers} title="60K Availments" value={sixtyKMembers.length} />
         </div>
       ) : null}
 
       <ChartCard title="Monthly Member Status">
         <ResponsiveContainer height="100%" width="100%">
           <BarChart data={memberStatusByMonth}>
-            <CartesianGrid strokeDasharray="3 3" vertical={false} />
-            <XAxis dataKey="month" />
-            <YAxis allowDecimals={false} domain={[0, memberStatusAxisMax]} ticks={memberStatusTicks} />
+            <CartesianGrid stroke="#E2E8F0" strokeDasharray="3 3" vertical={false} />
+            <XAxis dataKey="month" tick={{ fill: '#64748B', fontSize: 12 }} />
+            <YAxis allowDecimals={false} domain={[0, memberStatusAxisMax]} tick={{ fill: '#64748B', fontSize: 12 }} ticks={memberStatusTicks} />
             <Tooltip />
-            <Legend />
-            <Bar dataKey="Active" fill="#2563eb" radius={[4, 4, 0, 0]} />
-            <Bar dataKey="Inactive" fill="#22c55e" radius={[4, 4, 0, 0]} />
-            <Bar dataKey="Dormant" fill="#dc2626" radius={[4, 4, 0, 0]} />
+            <Legend
+              content={() => (
+                <div className="mt-3 flex flex-wrap items-center justify-center gap-3 text-sm">
+                  {MEMBER_STATUS_LEGEND.map((item) => (
+                    <div key={item.value} className="inline-flex items-center gap-1.5">
+                      <span className="h-3 w-3 rounded-[2px]" style={{ backgroundColor: item.color }} />
+                      <span className="text-slate-700">{item.value}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            />
+            <Bar dataKey="Active" fill="#16A34A" radius={[4, 4, 0, 0]} />
+            <Bar dataKey="Inactive" fill="#F59E0B" radius={[4, 4, 0, 0]} />
+            <Bar dataKey="Dormant" fill="#DC2626" radius={[4, 4, 0, 0]} />
           </BarChart>
         </ResponsiveContainer>
       </ChartCard>
 
       <div className="grid gap-6 xl:grid-cols-3">
         {visibleWidgets.statusChange ? (
-          <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-950 xl:col-span-2">
-            <h2 className="text-base font-bold text-slate-950 dark:text-white">Status Change Notifications</h2>
-            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-              Showing {Math.min(6, membersApproachingStatusChange.length)} of {membersApproachingStatusChange.length} members in the warning window.
+          <section className="rounded-[14px] border border-[#E2E8F0] bg-white p-5 shadow-[0_1px_3px_rgba(0,0,0,0.04)] xl:col-span-2">
+            <h2 className="text-base font-semibold text-slate-900">Status Change Notifications</h2>
+            <p className="mt-1 text-sm text-slate-500">
+              Showing {Math.min(showAllStatusChanges ? membersApproachingStatusChange.length : 5, membersApproachingStatusChange.length)} of {membersApproachingStatusChange.length} members in the warning window.
             </p>
-            <div className="mt-4 divide-y divide-slate-100 dark:divide-slate-800">
+            <div className="mt-4 divide-y divide-slate-100">
               {membersApproachingStatusChange.length > 0 ? (
-                membersApproachingStatusChange.slice(0, 6).map((alert) => {
-                  const debug = getLatestSmsDebugEntry(smsDebugLogs, alert.member.id);
-                  const sentToday = debug?.createdAt ? isSameIsoDate(debug.createdAt, todayIso()) : false;
+                membersApproachingStatusChange.slice(0, showAllStatusChanges ? membersApproachingStatusChange.length : 5).map((alert) => {
+                  const debug = smsDebugLogs.find((entry) => entry?.memberId === alert.member.id);
                   const hasHistory = Boolean(debug);
                   const isLiveSuccess = debug?.status === 'success';
                   const isLocalSave = debug?.status === 'saved_locally';
                   const isFailed = debug?.status === 'failed';
                   const isSkipped = debug?.status === 'skipped';
                   const statusTone = isLiveSuccess ? 'success' : isFailed ? 'danger' : isSkipped ? 'warning' : 'info';
-                  const statusLabel = isLiveSuccess
-                    ? sentToday ? 'SMS Sent Today' : 'SMS Sent Before'
-                    : isFailed
-                        ? 'SMS Failed'
-                        : isSkipped
-                          ? 'SMS Skipped'
-                          : 'Pending';
                   return (
                     <div
                       key={alert.member.id}
                       className="grid gap-4 py-4 md:grid-cols-[minmax(0,1fr)_auto] md:items-center"
                     >
                       <div className="min-w-0">
-                        <p className="font-bold text-slate-900 dark:text-white">{alert.member.fullName}</p>
-                        <p className="text-sm text-slate-500 dark:text-slate-400">{alert.member.memberId}</p>
+                        <p className="font-semibold text-slate-900">{alert.member.memberId}</p>
+                        <p className="text-sm text-slate-500">{alert.member.fullName}</p>
                       </div>
                       <div className="text-left md:text-right">
                         <div className="flex flex-wrap items-center gap-2 md:justify-end">
-                          <p className="font-black text-slate-950 dark:text-white">
-                            {alert.daysUntilStatusChange} day{alert.daysUntilStatusChange !== 1 ? 's' : ''} until dormant
+                          <p className="font-bold text-slate-900">
+                            {alert.daysUntilStatusChange} day{alert.daysUntilStatusChange !== 1 ? 's' : ''} before Dormant
                           </p>
                           <Badge tone={alert.projectedStatus === 'Dormant' ? 'Overdue' : 'Pending'}>{alert.projectedStatus}</Badge>
                         </div>
-                        {hasHistory ? (
-                          <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                            {isLiveSuccess
-                              ? `Sent ${debug.reminderDay} day reminder on ${formatDateTime(debug.createdAt)}`
-                              : isFailed
-                                  ? debug.error
-                                  : isSkipped
-                                    ? debug.error
-                                    : null}
-                          </p>
-                        ) : null}
+                        <p className="mt-1 text-xs text-slate-500">
+                          {alert.daysUntilStatusChange} day{alert.daysUntilStatusChange !== 1 ? 's' : ''} remaining before Dormant
+                        </p>
                       </div>
                     </div>
                   );
                 })
               ) : (
-                <div className="py-8 text-center text-sm text-slate-500 dark:text-slate-400">
+                <div className="py-8 text-center text-sm text-slate-500">
                   No members approaching status change
                 </div>
               )}
             </div>
+            {membersApproachingStatusChange.length > 5 ? (
+              <div className="mt-4">
+                <button
+                  className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+                  type="button"
+                  onClick={() => setShowAllStatusChanges((current) => !current)}
+                >
+                  {showAllStatusChanges
+                    ? 'View Less'
+                    : `View More (${membersApproachingStatusChange.length - 5})`}
+                </button>
+              </div>
+            ) : null}
           </section>
         ) : null}
 
         {visibleWidgets.activities ? (
-          <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-950">
-            <h2 className="text-base font-bold text-slate-950 dark:text-white">Recent Activities</h2>
+          <section className="rounded-[14px] border border-[#E2E8F0] bg-white p-5 shadow-[0_1px_3px_rgba(0,0,0,0.04)]">
+            <h2 className="text-base font-semibold text-slate-900">Recent Activities</h2>
             <div className="mt-4 space-y-4">
               {activities.map((activity) => (
                 <div key={activity.id} className="border-l-2 border-teal-500 pl-3">
-                  <p className="text-sm font-bold text-slate-900 dark:text-white">{activity.action}</p>
-                  <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{activity.detail}</p>
+                  <p className="text-sm font-semibold text-slate-900">{activity.action}</p>
+                  <p className="mt-1 text-xs text-slate-500">{activity.detail}</p>
                   <p className="mt-1 text-xs text-slate-400">{formatDateTime(activity.createdAt)}</p>
                 </div>
               ))}

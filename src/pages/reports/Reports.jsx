@@ -6,8 +6,6 @@ import FormField from '../../components/forms/FormField.jsx';
 import DataTable from '../../components/tables/DataTable.jsx';
 import ChartCard from '../../components/charts/ChartCard.jsx';
 import StatCard from '../../components/cards/StatCard.jsx';
-import ExportActions from '../../components/ui/ExportActions.jsx';
-import PageHeader from '../../components/ui/PageHeader.jsx';
 import { useAuth } from '../../context/AuthContext.jsx';
 import { useData } from '../../context/DataContext.jsx';
 import { useToast } from '../../context/ToastContext.jsx';
@@ -124,67 +122,30 @@ export default function Reports() {
   };
 
   return (
-    <div className="space-y-6">
-      <PageHeader
-        eyebrow="Analytics"
-        title="Reports"
-        description="Generate monthly register member or availment reports without removing existing report content."
-        actions={(
-          <ExportActions
-            rows={reportRows}
-            columns={columns}
-            filename={`${filters.type.toLowerCase().replace(/\s+/g, '-')}-${activeRange.from}-to-${activeRange.to}`}
-          />
-        )}
-      />
-
+    <div className="space-y-5">
       <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-        <div className="grid items-end gap-4 md:grid-cols-2 xl:grid-cols-[1.45fr_.8fr_1.35fr_1fr_auto]">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-end">
           <FormField
             as="select"
             label="Report Type"
-            className="min-w-0"
+            className="w-full lg:max-w-[420px]"
             options={reportTypes}
             value={filters.type}
             onChange={(event) => updateFilter('type', event.target.value)}
           />
-          <FormField
-            label="Date From"
-            className="min-w-0"
-            type="date"
-            value={filters.dateFrom}
-            onChange={(event) => updateFilter('dateFrom', event.target.value)}
-          />
-          <FormField
-            label="Date To"
-            min={filters.dateFrom}
-            className="min-w-0"
-            type="date"
-            value={filters.dateTo}
-            onChange={(event) => updateFilter('dateTo', event.target.value)}
-          />
-          <Button icon={FiFileText} onClick={generateReport}>Generate Report</Button>
+          <div className="w-full rounded-2xl border border-slate-200 bg-white p-4 shadow-sm lg:max-w-[260px] dark:border-slate-800 dark:bg-slate-950">
+            <StatCard accent="blue" icon={FiFileText} title="Report Rows" value={reportRows.length} />
+          </div>
         </div>
-        <p className="mt-3 text-sm text-slate-500 dark:text-slate-400">
-          {filters.type === 'Availment Report'
-            ? 'This report is based on member burial assistance applications, with CIFK number, dates, claim status, beneficiary, amount, and remarks.'
-          : filters.type === 'All Member Register'
-              ? 'This report is based on all member register records, membership date, branch, and premium.'
-          : filters.type === 'Contribution Report'
-                ? 'This report is based on contribution records, showing member name, CIFK number, contribution amount, time, and contribution date.'
-              : 'This report is based on monthly register member records, membership date, branch, and premium.'}
-        </p>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-3">
-        <StatCard accent="blue" icon={FiFileText} title="Report Rows" value={reportRows.length} />
+      <div className="grid gap-4 md:grid-cols-2">
         {filters.type === 'Availment Report' ? (
           <StatCard accent="green" icon={FiDownload} title="Report Total" value={formatCurrency(totalAmount)} />
         ) : null}
         {filters.type === 'Contribution Report' ? (
           <StatCard accent="green" icon={FiDownload} title="Contribution Total" value={formatCurrency(totalAmount)} />
         ) : null}
-        <StatCard accent="teal" icon={FiFileText} title="Saved Reports" value={scopedData.reports.length} />
       </div>
 
       {filters.type === 'Availment Report' ? (

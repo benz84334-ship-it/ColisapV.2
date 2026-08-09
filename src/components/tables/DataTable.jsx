@@ -37,11 +37,19 @@ export default function DataTable({
 }) {
   const [query, setQuery] = useState('');
   const [filterValues, setFilterValues] = useState({});
-  const [sort, setSort] = useState({ key: initialSortKey ?? columns[0]?.key, direction: initialSortDirection });
+  const [sort, setSort] = useState(() => (
+    initialSortKey === undefined
+      ? { key: columns[0]?.key, direction: initialSortDirection }
+      : { key: initialSortKey, direction: initialSortDirection }
+  ));
   const [page, setPage] = useState(1);
 
   useEffect(() => {
-    setSort({ key: initialSortKey ?? columns[0]?.key, direction: initialSortDirection });
+    setSort(
+      initialSortKey === undefined
+        ? { key: columns[0]?.key, direction: initialSortDirection }
+        : { key: initialSortKey, direction: initialSortDirection },
+    );
   }, [columns, initialSortDirection, initialSortKey]);
 
   useEffect(() => {
@@ -86,13 +94,13 @@ export default function DataTable({
   };
 
   return (
-    <section className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-950">
+    <section className="overflow-hidden rounded-2xl border border-[#E2E8F0] bg-white shadow-[0_1px_3px_rgba(0,0,0,0.04)]">
       {!hideHeader ? (
-        <div className="flex flex-col gap-4 border-b border-slate-200 bg-slate-50/70 p-5 dark:border-slate-800 dark:bg-slate-900/40 xl:flex-row xl:items-center xl:justify-between">
+        <div className="flex flex-col gap-4 border-b border-[#E2E8F0] bg-[#F8FAFC] p-6 xl:flex-row xl:items-center xl:justify-between">
           {!hideHeaderText ? (
             <div>
-              {title ? <h2 className="text-lg font-bold text-slate-950 dark:text-white">{title}</h2> : null}
-              {description ? <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{description}</p> : null}
+              {title ? <h2 className="text-lg font-bold text-slate-900">{title}</h2> : null}
+              {description ? <p className="mt-1 text-sm text-slate-500">{description}</p> : null}
             </div>
           ) : <div />}
           <div className="flex flex-wrap items-center gap-2 no-print">
@@ -102,11 +110,11 @@ export default function DataTable({
       ) : null}
 
       {hideTools ? null : (
-        <div className="grid gap-4 border-b border-slate-200 bg-white p-5 no-print dark:border-slate-800 dark:bg-slate-950 lg:grid-cols-[minmax(0,1.7fr)_minmax(22rem,1fr)]">
+        <div className="grid gap-4 border-b border-[#E2E8F0] bg-white p-6 no-print lg:grid-cols-[minmax(0,1.7fr)_minmax(22rem,1fr)]">
           <label className="relative block">
             <FiSearch className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
             <input
-              className="h-11 w-full rounded-2xl border border-slate-200 bg-slate-50 pl-10 pr-3 text-sm outline-none transition placeholder:text-slate-400 focus:border-teal-500 focus:bg-white focus:ring-2 focus:ring-teal-500/20 dark:border-slate-700 dark:bg-slate-900 dark:text-white dark:focus:bg-slate-950"
+              className="h-11 w-full rounded-[12px] border border-[#E2E8F0] bg-white pl-10 pr-3 text-sm text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-teal-700 focus:ring-2 focus:ring-teal-500/10"
               placeholder={searchPlaceholder}
               value={query}
               onChange={(event) => setQuery(event.target.value)}
@@ -117,7 +125,7 @@ export default function DataTable({
               <select
                 key={filter.key}
                 aria-label={filter.label}
-                className="h-11 w-full min-w-0 rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm font-medium text-slate-700 outline-none transition focus:border-teal-500 focus:bg-white focus:ring-2 focus:ring-teal-500/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:focus:bg-slate-950"
+                className="h-11 w-full min-w-0 rounded-[12px] border border-[#E2E8F0] bg-white px-4 text-sm font-medium text-slate-700 outline-none transition focus:border-teal-700 focus:ring-2 focus:ring-teal-500/10"
                 value={filterValues[filter.key] || 'All'}
                 onChange={(event) => setFilterValues((current) => ({ ...current, [filter.key]: event.target.value }))}
               >
@@ -134,13 +142,13 @@ export default function DataTable({
       )}
 
       <div className="table-scroll overflow-x-auto">
-        <table className="min-w-full divide-y divide-slate-200 text-left text-sm dark:divide-slate-800">
-          <thead className="bg-slate-50/80 text-xs uppercase tracking-wider text-slate-500 dark:bg-slate-900 dark:text-slate-400">
+        <table className="min-w-full divide-y divide-[#E2E8F0] text-left text-sm">
+          <thead className="bg-[#F8FAFC] text-xs uppercase tracking-wider text-slate-500">
             <tr>
               {columns.map((column) => (
-                <th key={column.key} className={`whitespace-nowrap px-5 py-4 font-bold ${column.className || ''}`}>
+                <th key={column.key} className={`whitespace-nowrap px-6 py-4 font-semibold text-slate-500 ${column.className || ''}`}>
                   <button
-                    className="inline-flex items-center gap-1 rounded-lg text-left hover:text-slate-900 disabled:cursor-default disabled:hover:text-inherit dark:hover:text-white"
+                    className="inline-flex items-center gap-1 rounded-lg text-left hover:text-slate-900 disabled:cursor-default disabled:hover:text-inherit"
                     disabled={column.sortable === false}
                     type="button"
                     onClick={() => handleSort(column)}
@@ -150,30 +158,30 @@ export default function DataTable({
                   </button>
                 </th>
               ))}
-              {actions ? <th className="whitespace-nowrap px-5 py-3 text-center font-bold">Actions</th> : null}
+              {actions ? <th className="whitespace-nowrap px-6 py-4 text-center font-semibold text-slate-500">Actions</th> : null}
             </tr>
           </thead>
-          <tbody className="screen-table-body divide-y divide-slate-100 dark:divide-slate-800">
+          <tbody className="screen-table-body divide-y divide-[#E2E8F0]">
             {paginated.map((row) => (
-              <tr key={row.id} className="align-middle transition hover:bg-slate-50 dark:hover:bg-slate-900/70">
+              <tr key={row.id} className="align-middle transition hover:bg-[#F8FAFC]">
                 {columns.map((column) => (
-                  <td key={column.key} className={`px-5 py-4 text-slate-700 dark:text-slate-200 ${column.cellClassName || ''}`}>
+                  <td key={column.key} className={`px-6 py-5 text-slate-700 ${column.cellClassName || ''}`}>
                     {column.render ? column.render(row) : valueFor(row, column.key)}
                   </td>
                 ))}
-                {actions ? <td className="px-5 py-4 text-center">{actions(row)}</td> : null}
+                {actions ? <td className="px-6 py-5 text-center">{actions(row)}</td> : null}
               </tr>
             ))}
           </tbody>
-          <tbody className="print-table-body hidden divide-y divide-slate-200">
+          <tbody className="print-table-body hidden divide-y divide-[#E2E8F0]">
             {sorted.map((row) => (
               <tr key={`print-${row.id}`} className="align-middle">
                 {columns.map((column) => (
-                  <td key={column.key} className={`px-5 py-3 text-slate-700 ${column.cellClassName || ''}`}>
+                  <td key={column.key} className={`px-6 py-4 text-slate-700 ${column.cellClassName || ''}`}>
                     {column.render ? column.render(row) : valueFor(row, column.key)}
                   </td>
                 ))}
-                {actions ? <td className="px-5 py-3 text-center">{actions(row)}</td> : null}
+                {actions ? <td className="px-6 py-4 text-center">{actions(row)}</td> : null}
               </tr>
             ))}
           </tbody>
@@ -186,7 +194,7 @@ export default function DataTable({
         </div>
       ) : null}
 
-      <div className="table-pagination flex flex-col gap-3 border-t border-slate-200 bg-slate-50/60 p-5 text-sm text-slate-500 dark:border-slate-800 dark:bg-slate-900/40 dark:text-slate-400 sm:flex-row sm:items-center sm:justify-between">
+      <div className="table-pagination flex flex-col gap-3 border-t border-[#E2E8F0] bg-[#F8FAFC] p-6 text-sm text-slate-500 sm:flex-row sm:items-center sm:justify-between">
         <span>
           Showing {paginated.length ? (currentPage - 1) * pageSize + 1 : 0}-{Math.min(currentPage * pageSize, sorted.length)} of {sorted.length}
         </span>
@@ -194,7 +202,7 @@ export default function DataTable({
           <Button icon={FiChevronLeft} variant="secondary" disabled={currentPage === 1} onClick={() => setPage((value) => Math.max(1, value - 1))}>
             Prev
           </Button>
-          <span className="rounded-xl border border-slate-200 bg-white px-3 py-2 font-bold text-slate-700 shadow-sm dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200">
+          <span className="rounded-[12px] border border-[#E2E8F0] bg-white px-3 py-2 font-semibold text-slate-700 shadow-sm">
             {currentPage} / {pages}
           </span>
           <Button

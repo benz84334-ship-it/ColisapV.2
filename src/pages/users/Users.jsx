@@ -51,11 +51,11 @@ export default function Users({ embedded = false }) {
       { key: 'role', label: 'Role' },
       { key: 'branch', label: 'Branch' },
       { key: 'email', label: 'Email' },
-      { key: 'contactNumber', label: 'Contact' },
+      ...(embedded ? [] : [{ key: 'contactNumber', label: 'Contact' }]),
       { key: 'lastLogin', label: 'Last Login', render: (row) => (row.lastLogin ? formatDateTime(row.lastLogin) : 'Never') },
       { key: 'status', label: 'Status', render: (row) => <Badge>{row.status}</Badge> },
     ],
-    [],
+    [embedded],
   );
 
   const branchRows = useMemo(() => {
@@ -182,11 +182,11 @@ export default function Users({ embedded = false }) {
         />
       )}
 
-      <div className="flex w-fit gap-1 rounded-2xl border border-slate-200 bg-white p-1 shadow-sm dark:border-slate-800 dark:bg-slate-950" role="tablist" aria-label="User management views">
-        <button aria-selected={activeTab === 'users'} className={`inline-flex items-center gap-2 rounded-md px-4 py-2 text-sm font-bold transition ${activeTab === 'users' ? 'bg-teal-700 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800'}`} role="tab" type="button" onClick={() => setActiveTab('users')}>
+      <div className="flex w-fit gap-1 rounded-2xl border border-[#E2E8F0] bg-white p-1 shadow-sm" role="tablist" aria-label="User management views">
+        <button aria-selected={activeTab === 'users'} className={`inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold transition ${activeTab === 'users' ? 'bg-[#0F766E] text-white shadow-sm' : 'text-slate-600 hover:bg-[#F8FAFC] hover:text-slate-900'}`} role="tab" type="button" onClick={() => setActiveTab('users')}>
           <FiUsers /> Users
         </button>
-        <button aria-selected={activeTab === 'branches'} className={`inline-flex items-center gap-2 rounded-md px-4 py-2 text-sm font-bold transition ${activeTab === 'branches' ? 'bg-teal-700 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800'}`} role="tab" type="button" onClick={() => setActiveTab('branches')}>
+        <button aria-selected={activeTab === 'branches'} className={`inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold transition ${activeTab === 'branches' ? 'bg-[#0F766E] text-white shadow-sm' : 'text-slate-600 hover:bg-[#F8FAFC] hover:text-slate-900'}`} role="tab" type="button" onClick={() => setActiveTab('branches')}>
           <FiGitBranch /> Branches
         </button>
       </div>
@@ -202,9 +202,11 @@ export default function Users({ embedded = false }) {
             <Button className="px-3" icon={FiEdit2} variant="secondary" onClick={() => openForm(row)}>
               Edit
             </Button>
-            <Button className="px-3" icon={FiRefreshCw} variant="secondary" onClick={() => resetPassword(row)}>
-              Reset
-            </Button>
+            {embedded ? null : (
+              <Button className="px-3" icon={FiRefreshCw} variant="secondary" onClick={() => resetPassword(row)}>
+                Reset
+              </Button>
+            )}
             <Button className="px-3" icon={FiTrash2} variant="danger" onClick={() => setDeleteTarget(row)}>
               Delete
             </Button>
@@ -212,7 +214,6 @@ export default function Users({ embedded = false }) {
         )}
         columns={columns}
         data={data.users}
-        description="Admin-only account management."
         filters={[
           { key: 'role', label: 'Role', options: USER_ROLE_OPTIONS },
           { key: 'status', label: 'Status', options: ['Active', 'Inactive'] },
@@ -257,9 +258,7 @@ export default function Users({ embedded = false }) {
             onChange={(branch) => setForm((current) => ({ ...current, branch }))}
           />
           <FormField label="Email" type="email" value={form.email} onChange={(event) => setForm((current) => ({ ...current, email: event.target.value }))} />
-          <FormField label="Contact Number" value={form.contactNumber} onChange={(event) => setForm((current) => ({ ...current, contactNumber: event.target.value }))} />
           <FormField as="select" label="Role" options={USER_ROLE_OPTIONS} value={form.role} onChange={(event) => setForm((current) => ({ ...current, role: event.target.value }))} />
-          <FormField as="select" label="Status" options={['Active', 'Inactive']} value={form.status} onChange={(event) => setForm((current) => ({ ...current, status: event.target.value }))} />
         </div>
       </Modal>
 

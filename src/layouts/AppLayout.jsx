@@ -8,7 +8,7 @@ export default function AppLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   return (
-    <div className="min-h-screen bg-slate-100 dark:bg-slate-950 lg:pl-72">
+    <div className="min-h-screen bg-[#F8FAFC] lg:pl-72">
       <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
       <div className="min-h-screen">
         <Navbar onMenu={() => setSidebarOpen(true)} />

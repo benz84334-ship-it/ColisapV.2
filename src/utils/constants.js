@@ -67,26 +67,25 @@ export const DEFAULT_LOAN_TYPES = [
 export const NAV_ITEMS = [
   { label: 'Dashboard', path: '/dashboard', roles: WORKSPACE_ROLES },
   { label: 'Members', path: '/members', roles: WORKSPACE_ROLES },
-  { label: 'Claimant Application', path: '/claimant-application', roles: [ROLES.STAFF] },
   { label: 'Request Approval', path: '/request-approval', roles: [ROLES.ADMIN, ROLES.MANAGER] },
   { label: 'Reports', path: '/reports', roles: WORKSPACE_ROLES },
   { label: 'Settings', path: '/settings', roles: [ROLES.ADMIN] },
 ];
 
 export const STATUS_STYLES = {
-  Active: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-200',
-  Inactive: 'bg-slate-100 text-slate-700 dark:bg-slate-700 dark:text-slate-200',
-  Dormant: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-500/15 dark:text-indigo-200',
-  Pending: 'bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-200',
-  'Under Review': 'bg-indigo-100 text-indigo-700 dark:bg-indigo-500/15 dark:text-indigo-200',
-  Approved: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-200',
-  Rejected: 'bg-rose-100 text-rose-700 dark:bg-rose-500/15 dark:text-rose-200',
-  Released: 'bg-blue-100 text-blue-700 dark:bg-blue-500/15 dark:text-blue-200',
-  Completed: 'bg-blue-100 text-blue-700 dark:bg-blue-500/15 dark:text-blue-200',
-  Overdue: 'bg-rose-100 text-rose-700 dark:bg-rose-500/15 dark:text-rose-200',
-  Paid: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-200',
-  Partial: 'bg-orange-100 text-orange-700 dark:bg-orange-500/15 dark:text-orange-200',
-  Reversed: 'bg-rose-100 text-rose-700 dark:bg-rose-500/15 dark:text-rose-200',
+  Active: 'border border-emerald-200 bg-emerald-50 text-emerald-700',
+  Inactive: 'border border-amber-200 bg-amber-50 text-amber-700',
+  Dormant: 'border border-rose-200 bg-rose-50 text-rose-700',
+  Pending: 'border border-amber-200 bg-amber-50 text-amber-700',
+  'Under Review': 'border border-slate-200 bg-slate-50 text-slate-700',
+  Approved: 'border border-emerald-200 bg-emerald-50 text-emerald-700',
+  Rejected: 'border border-rose-200 bg-rose-50 text-rose-700',
+  Released: 'border border-sky-200 bg-sky-50 text-sky-700',
+  Completed: 'border border-sky-200 bg-sky-50 text-sky-700',
+  Overdue: 'border border-rose-200 bg-rose-50 text-rose-700',
+  Paid: 'border border-emerald-200 bg-emerald-50 text-emerald-700',
+  Partial: 'border border-amber-200 bg-amber-50 text-amber-700',
+  Reversed: 'border border-rose-200 bg-rose-50 text-rose-700',
 };
 
 export function normalizeBenefitCategory(value = '') {

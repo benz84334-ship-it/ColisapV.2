@@ -18,12 +18,25 @@ function monthDiff(later, earlier) {
   return (later.getFullYear() - earlier.getFullYear()) * 12 + (later.getMonth() - earlier.getMonth());
 }
 
+function fullMonthsElapsed(later, earlier) {
+  let months = monthDiff(later, earlier);
+  const laterDay = later.getDate();
+  const earlierDay = earlier.getDate();
+
+  if (laterDay < earlierDay) {
+    months -= 1;
+    return Math.max(0, months);
+  }
+
+  return Math.max(0, months);
+}
+
 export function getMonthsWithoutContribution(member = {}, today = todayIso()) {
   const lastContribution = normalizeDate(getLastShareCapitalDepositDate(member));
   const currentDate = normalizeDate(today);
   if (!lastContribution || !currentDate) return 0;
   if (lastContribution > currentDate) return 0;
-  return Math.max(0, monthDiff(currentDate, lastContribution));
+  return fullMonthsElapsed(currentDate, lastContribution);
 }
 
 export function getStatusChangeReason(status) {
@@ -40,7 +53,15 @@ export function getNextStatusFromMonths(monthsWithoutContribution) {
 }
 
 export function getComputedMemberStatus(member = {}, _loans = [], today = todayIso()) {
-  return getNextStatusFromMonths(getMonthsWithoutContribution(member, today));
+  const lastContribution = normalizeDate(getLastShareCapitalDepositDate(member));
+  const currentDate = normalizeDate(today);
+  if (!lastContribution || !currentDate) return 'Active';
+  if (lastContribution > currentDate) return 'Active';
+
+  const monthsWithoutContribution = fullMonthsElapsed(currentDate, lastContribution);
+  if (monthsWithoutContribution >= 3) return 'Dormant';
+  if (monthsWithoutContribution >= 1) return 'Inactive';
+  return 'Active';
 }
 
 export function withComputedMemberStatus(member = {}, loans = [], today = todayIso()) {
@@ -67,34 +88,22 @@ export function getMembersApproachingStatusChange(members = [], _loans = [], tod
       if (!lastContribution || !currentDate) return null;
 
       const monthsWithoutContribution = getMonthsWithoutContribution(member, today);
-      if (monthsWithoutContribution < DORMANCY_WARNING_MONTHS) return null;
+      const projectedStatus = getNextStatusFromMonths(monthsWithoutContribution);
+      if (projectedStatus === 'Dormant') return null;
 
       const dormantThreshold = new Date(lastContribution);
       dormantThreshold.setMonth(dormantThreshold.getMonth() + DORMANT_MONTHS_WITHOUT_DEPOSIT);
       const daysUntilDormant = Math.ceil((dormantThreshold - currentDate) / (1000 * 60 * 60 * 24));
-      const isAlreadyDormant = daysUntilDormant <= 0;
+      if (daysUntilDormant < 1 || daysUntilDormant > 30) return null;
 
-      if (daysUntilDormant > 0 && daysUntilDormant <= 30) {
-        return {
-          member,
-          daysUntilStatusChange: daysUntilDormant,
-          projectedStatus: 'Dormant',
-          statusChangeDate: dormantThreshold.toISOString().split('T')[0],
-          reminderDay: daysUntilDormant,
-        };
-      }
-
-      if (isAlreadyDormant) {
-        return {
-          member,
-          daysUntilStatusChange: 0,
-          projectedStatus: 'Dormant',
-          statusChangeDate: dormantThreshold.toISOString().split('T')[0],
-          reminderDay: 0,
-        };
-      }
-
-      return null;
+      return {
+        member,
+        daysUntilStatusChange: daysUntilDormant,
+        projectedStatus,
+        statusChangeDate: dormantThreshold.toISOString().split('T')[0],
+        reminderDay: daysUntilDormant,
+        monthsWithoutContribution,
+      };
     })
     .filter(Boolean);
 }
