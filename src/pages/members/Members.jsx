@@ -1540,26 +1540,30 @@ export default function Members() {
                       Request Member
                     </Button>
                   ) : null}
-                  <input
-                    ref={csvInputRef}
-                    type="file"
-                    accept=".csv,text/csv"
-                    className="hidden"
-                    onChange={handleImportSelection}
-                  />
-                  <input
-                    ref={excelInputRef}
-                    type="file"
-                    accept=".xls,.xlsx,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                    className="hidden"
-                    onChange={handleImportSelection}
-                  />
-                  <Button icon={FiUpload} variant="secondary" onClick={() => csvInputRef.current?.click()} disabled={isImporting}>
-                    Import CSV
-                  </Button>
-                  <Button icon={FiFile} onClick={() => excelInputRef.current?.click()} disabled={isImporting}>
-                    Import Excel
-                  </Button>
+                  {!isManager ? (
+                    <>
+                      <input
+                        ref={csvInputRef}
+                        type="file"
+                        accept=".csv,text/csv"
+                        className="hidden"
+                        onChange={handleImportSelection}
+                      />
+                      <input
+                        ref={excelInputRef}
+                        type="file"
+                        accept=".xls,.xlsx,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                        className="hidden"
+                        onChange={handleImportSelection}
+                      />
+                      <Button icon={FiUpload} variant="secondary" onClick={() => csvInputRef.current?.click()} disabled={isImporting}>
+                        Import CSV
+                      </Button>
+                      <Button icon={FiFile} onClick={() => excelInputRef.current?.click()} disabled={isImporting}>
+                        Import Excel
+                      </Button>
+                    </>
+                  ) : null}
                 </div>
               )}
               actions={(scopedData.members).length ? (row) => (

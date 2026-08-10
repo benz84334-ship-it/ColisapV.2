@@ -24,6 +24,7 @@ export default function Dashboard() {
   const { currentUser } = useAuth();
   const isAdmin = currentUser?.role === ROLES.ADMIN;
   const isManager = currentUser?.role === ROLES.MANAGER;
+  const isStaff = currentUser?.role === ROLES.STAFF;
   const scopedData = isAdmin ? data : getBranchScopedData(data, currentUser?.branch);
   const dashboard = buildDashboardData(scopedData, isAdmin ? undefined : currentUser?.branch);
   const activities = scopedData.activityLogs.slice(0, 6);
@@ -31,7 +32,7 @@ export default function Dashboard() {
   const [accountListModal, setAccountListModal] = useState(null);
   const visibleWidgets = {
     stats: true,
-    statusChange: true,
+    statusChange: !isStaff,
     activities: true,
   };
   const activeMembers = scopedData.members.filter((member) => member.status === 'Active').length;
@@ -116,109 +117,156 @@ export default function Dashboard() {
         </div>
       ) : null}
 
-      <ChartCard title="Monthly Member Status">
-        <ResponsiveContainer height="100%" width="100%">
-          <BarChart data={memberStatusByMonth}>
-            <CartesianGrid stroke="#E2E8F0" strokeDasharray="3 3" vertical={false} />
-            <XAxis dataKey="month" tick={{ fill: '#64748B', fontSize: 12 }} />
-            <YAxis allowDecimals={false} domain={[0, memberStatusAxisMax]} tick={{ fill: '#64748B', fontSize: 12 }} ticks={memberStatusTicks} />
-            <Tooltip />
-            <Legend
-              content={() => (
-                <div className="mt-3 flex flex-wrap items-center justify-center gap-3 text-sm">
-                  {MEMBER_STATUS_LEGEND.map((item) => (
-                    <div key={item.value} className="inline-flex items-center gap-1.5">
-                      <span className="h-3 w-3 rounded-[2px]" style={{ backgroundColor: item.color }} />
-                      <span className="text-slate-700">{item.value}</span>
+      {isStaff ? (
+        <div className="grid gap-6 xl:grid-cols-[minmax(0,2fr)_minmax(320px,1fr)]">
+          <ChartCard title="Monthly Member Status">
+            <ResponsiveContainer height="100%" width="100%">
+              <BarChart data={memberStatusByMonth}>
+                <CartesianGrid stroke="#E2E8F0" strokeDasharray="3 3" vertical={false} />
+                <XAxis dataKey="month" tick={{ fill: '#64748B', fontSize: 12 }} />
+                <YAxis allowDecimals={false} domain={[0, memberStatusAxisMax]} tick={{ fill: '#64748B', fontSize: 12 }} ticks={memberStatusTicks} />
+                <Tooltip />
+                <Legend
+                  content={() => (
+                    <div className="mt-3 flex flex-wrap items-center justify-center gap-3 text-sm">
+                      {MEMBER_STATUS_LEGEND.map((item) => (
+                        <div key={item.value} className="inline-flex items-center gap-1.5">
+                          <span className="h-3 w-3 rounded-[2px]" style={{ backgroundColor: item.color }} />
+                          <span className="text-slate-700">{item.value}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                />
+                <Bar dataKey="Active" fill="#16A34A" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="Inactive" fill="#F59E0B" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="Dormant" fill="#DC2626" radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </ChartCard>
+
+          {visibleWidgets.activities ? (
+            <section className="rounded-[14px] border border-[#E2E8F0] bg-white p-5 shadow-[0_1px_3px_rgba(0,0,0,0.04)]">
+              <h2 className="text-base font-semibold text-slate-900">Recent Activities</h2>
+              <div className="mt-4 space-y-4">
+                {activities.map((activity) => (
+                  <div key={activity.id} className="border-l-2 border-teal-500 pl-3">
+                    <p className="text-sm font-semibold text-slate-900">{activity.action}</p>
+                    <p className="mt-1 text-xs text-slate-500">{activity.detail}</p>
+                    <p className="mt-1 text-xs text-slate-400">{formatDateTime(activity.createdAt)}</p>
+                  </div>
+                ))}
+              </div>
+            </section>
+          ) : null}
+        </div>
+      ) : (
+        <>
+          <ChartCard title="Monthly Member Status">
+            <ResponsiveContainer height="100%" width="100%">
+              <BarChart data={memberStatusByMonth}>
+                <CartesianGrid stroke="#E2E8F0" strokeDasharray="3 3" vertical={false} />
+                <XAxis dataKey="month" tick={{ fill: '#64748B', fontSize: 12 }} />
+                <YAxis allowDecimals={false} domain={[0, memberStatusAxisMax]} tick={{ fill: '#64748B', fontSize: 12 }} ticks={memberStatusTicks} />
+                <Tooltip />
+                <Legend
+                  content={() => (
+                    <div className="mt-3 flex flex-wrap items-center justify-center gap-3 text-sm">
+                      {MEMBER_STATUS_LEGEND.map((item) => (
+                        <div key={item.value} className="inline-flex items-center gap-1.5">
+                          <span className="h-3 w-3 rounded-[2px]" style={{ backgroundColor: item.color }} />
+                          <span className="text-slate-700">{item.value}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                />
+                <Bar dataKey="Active" fill="#16A34A" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="Inactive" fill="#F59E0B" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="Dormant" fill="#DC2626" radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </ChartCard>
+
+          <div className="grid gap-6 xl:grid-cols-3">
+            {visibleWidgets.statusChange ? (
+              <section className="rounded-[14px] border border-[#E2E8F0] bg-white p-5 shadow-[0_1px_3px_rgba(0,0,0,0.04)] xl:col-span-2">
+                <h2 className="text-base font-semibold text-slate-900">Status Change Notifications</h2>
+                <p className="mt-1 text-sm text-slate-500">
+                  Showing {Math.min(showAllStatusChanges ? membersApproachingStatusChange.length : 5, membersApproachingStatusChange.length)} of {membersApproachingStatusChange.length} members in the warning window.
+                </p>
+                <div className="mt-4 divide-y divide-slate-100">
+                  {membersApproachingStatusChange.length > 0 ? (
+                    membersApproachingStatusChange.slice(0, showAllStatusChanges ? membersApproachingStatusChange.length : 5).map((alert) => {
+                      const debug = smsDebugLogs.find((entry) => entry?.memberId === alert.member.id);
+                      const hasHistory = Boolean(debug);
+                      const isLiveSuccess = debug?.status === 'success';
+                      const isLocalSave = debug?.status === 'saved_locally';
+                      const isFailed = debug?.status === 'failed';
+                      const isSkipped = debug?.status === 'skipped';
+                      const statusTone = isLiveSuccess ? 'success' : isFailed ? 'danger' : isSkipped ? 'warning' : 'info';
+                      return (
+                        <div
+                          key={alert.member.id}
+                          className="grid gap-4 py-4 md:grid-cols-[minmax(0,1fr)_auto] md:items-center"
+                        >
+                          <div className="min-w-0">
+                            <p className="font-semibold text-slate-900">{alert.member.memberId}</p>
+                            <p className="text-sm text-slate-500">{alert.member.fullName}</p>
+                          </div>
+                          <div className="text-left md:text-right">
+                            <div className="flex flex-wrap items-center gap-2 md:justify-end">
+                              <p className="font-bold text-slate-900">
+                                {alert.daysUntilStatusChange} day{alert.daysUntilStatusChange !== 1 ? 's' : ''} before Dormant
+                              </p>
+                              <Badge tone={alert.projectedStatus === 'Dormant' ? 'Overdue' : 'Pending'}>{alert.projectedStatus}</Badge>
+                            </div>
+                            <p className="mt-1 text-xs text-slate-500">
+                              {alert.daysUntilStatusChange} day{alert.daysUntilStatusChange !== 1 ? 's' : ''} remaining before Dormant
+                            </p>
+                          </div>
+                        </div>
+                      );
+                    })
+                  ) : (
+                    <div className="py-8 text-center text-sm text-slate-500">
+                      No members approaching status change
+                    </div>
+                  )}
+                </div>
+                {membersApproachingStatusChange.length > 5 ? (
+                  <div className="mt-4">
+                    <button
+                      className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+                      type="button"
+                      onClick={() => setShowAllStatusChanges((current) => !current)}
+                    >
+                      {showAllStatusChanges
+                        ? 'View Less'
+                        : `View More (${membersApproachingStatusChange.length - 5})`}
+                    </button>
+                  </div>
+                ) : null}
+              </section>
+            ) : null}
+
+            {visibleWidgets.activities ? (
+              <section className="rounded-[14px] border border-[#E2E8F0] bg-white p-5 shadow-[0_1px_3px_rgba(0,0,0,0.04)]">
+                <h2 className="text-base font-semibold text-slate-900">Recent Activities</h2>
+                <div className="mt-4 space-y-4">
+                  {activities.map((activity) => (
+                    <div key={activity.id} className="border-l-2 border-teal-500 pl-3">
+                      <p className="text-sm font-semibold text-slate-900">{activity.action}</p>
+                      <p className="mt-1 text-xs text-slate-500">{activity.detail}</p>
+                      <p className="mt-1 text-xs text-slate-400">{formatDateTime(activity.createdAt)}</p>
                     </div>
                   ))}
                 </div>
-              )}
-            />
-            <Bar dataKey="Active" fill="#16A34A" radius={[4, 4, 0, 0]} />
-            <Bar dataKey="Inactive" fill="#F59E0B" radius={[4, 4, 0, 0]} />
-            <Bar dataKey="Dormant" fill="#DC2626" radius={[4, 4, 0, 0]} />
-          </BarChart>
-        </ResponsiveContainer>
-      </ChartCard>
-
-      <div className="grid gap-6 xl:grid-cols-3">
-        {visibleWidgets.statusChange ? (
-          <section className="rounded-[14px] border border-[#E2E8F0] bg-white p-5 shadow-[0_1px_3px_rgba(0,0,0,0.04)] xl:col-span-2">
-            <h2 className="text-base font-semibold text-slate-900">Status Change Notifications</h2>
-            <p className="mt-1 text-sm text-slate-500">
-              Showing {Math.min(showAllStatusChanges ? membersApproachingStatusChange.length : 5, membersApproachingStatusChange.length)} of {membersApproachingStatusChange.length} members in the warning window.
-            </p>
-            <div className="mt-4 divide-y divide-slate-100">
-              {membersApproachingStatusChange.length > 0 ? (
-                membersApproachingStatusChange.slice(0, showAllStatusChanges ? membersApproachingStatusChange.length : 5).map((alert) => {
-                  const debug = smsDebugLogs.find((entry) => entry?.memberId === alert.member.id);
-                  const hasHistory = Boolean(debug);
-                  const isLiveSuccess = debug?.status === 'success';
-                  const isLocalSave = debug?.status === 'saved_locally';
-                  const isFailed = debug?.status === 'failed';
-                  const isSkipped = debug?.status === 'skipped';
-                  const statusTone = isLiveSuccess ? 'success' : isFailed ? 'danger' : isSkipped ? 'warning' : 'info';
-                  return (
-                    <div
-                      key={alert.member.id}
-                      className="grid gap-4 py-4 md:grid-cols-[minmax(0,1fr)_auto] md:items-center"
-                    >
-                      <div className="min-w-0">
-                        <p className="font-semibold text-slate-900">{alert.member.memberId}</p>
-                        <p className="text-sm text-slate-500">{alert.member.fullName}</p>
-                      </div>
-                      <div className="text-left md:text-right">
-                        <div className="flex flex-wrap items-center gap-2 md:justify-end">
-                          <p className="font-bold text-slate-900">
-                            {alert.daysUntilStatusChange} day{alert.daysUntilStatusChange !== 1 ? 's' : ''} before Dormant
-                          </p>
-                          <Badge tone={alert.projectedStatus === 'Dormant' ? 'Overdue' : 'Pending'}>{alert.projectedStatus}</Badge>
-                        </div>
-                        <p className="mt-1 text-xs text-slate-500">
-                          {alert.daysUntilStatusChange} day{alert.daysUntilStatusChange !== 1 ? 's' : ''} remaining before Dormant
-                        </p>
-                      </div>
-                    </div>
-                  );
-                })
-              ) : (
-                <div className="py-8 text-center text-sm text-slate-500">
-                  No members approaching status change
-                </div>
-              )}
-            </div>
-            {membersApproachingStatusChange.length > 5 ? (
-              <div className="mt-4">
-                <button
-                  className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
-                  type="button"
-                  onClick={() => setShowAllStatusChanges((current) => !current)}
-                >
-                  {showAllStatusChanges
-                    ? 'View Less'
-                    : `View More (${membersApproachingStatusChange.length - 5})`}
-                </button>
-              </div>
+              </section>
             ) : null}
-          </section>
-        ) : null}
-
-        {visibleWidgets.activities ? (
-          <section className="rounded-[14px] border border-[#E2E8F0] bg-white p-5 shadow-[0_1px_3px_rgba(0,0,0,0.04)]">
-            <h2 className="text-base font-semibold text-slate-900">Recent Activities</h2>
-            <div className="mt-4 space-y-4">
-              {activities.map((activity) => (
-                <div key={activity.id} className="border-l-2 border-teal-500 pl-3">
-                  <p className="text-sm font-semibold text-slate-900">{activity.action}</p>
-                  <p className="mt-1 text-xs text-slate-500">{activity.detail}</p>
-                  <p className="mt-1 text-xs text-slate-400">{formatDateTime(activity.createdAt)}</p>
-                </div>
-              ))}
-            </div>
-          </section>
-        ) : null}
-      </div>
+          </div>
+        </>
+      )}
 
       <Modal
         maxWidth="max-w-5xl"
