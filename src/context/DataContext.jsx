@@ -817,38 +817,13 @@ export function DataProvider({ children }) {
           : [];
       const isImportedMemberBatch = request.requestType === 'Imported Member Batch' || request.requestKind === 'batch-import' || request.approvalQueue === 'member-import';
       if (!isClaimRequest && isImportedMemberBatch && importedBatchMembers.length) {
-        const duplicateMember = importedBatchMembers.find((item) =>
-          findMemberByCifNumber(database.members || [], item.cifNumber || item.memberId)
-          || (item.fullName && (database.members || []).some((member) =>
+        const nextMembers = importedBatchMembers
+          .filter((item) => String(item.importStatus || item.validation || '').trim().toLowerCase() === 'valid' || item.isValid === true)
+          .filter((item) => !findMemberByCifNumber(database.members || [], item.cifNumber || item.memberId))
+          .filter((item) => !(item.fullName && (database.members || []).some((member) =>
             String(member.fullName || '').trim().toLowerCase() === String(item.fullName || item.member || '').trim().toLowerCase()
-            && String(member.contactNumber || '').trim() === String(item.contactNumber || '').trim()))
-        );
-        if (duplicateMember) {
-          const duplicateReason = `Duplicate member detected in batch import: ${duplicateMember.fullName || duplicateMember.member || duplicateMember.cifNumber || duplicateMember.memberId}.`;
-          const rejectedRequest = {
-            ...request,
-            requestStatus: 'Rejected',
-            rejectedAt: now,
-            rejectionReason: duplicateReason,
-            approvalReason: null,
-            updatedAt: now,
-          };
-          const requestKeys = new Set([request.id, request.requestId].filter(Boolean));
-          const nextRequests = (database.requests || []).map((item) =>
-            requestKeys.has(item.id) || requestKeys.has(item.requestId) ? rejectedRequest : item,
-          );
-          setDatabase((current) => ({ ...current, requests: nextRequests }));
-          await saveSupabaseKey('requests', [rejectedRequest]);
-          addActivity('Rejected Member Batch', `${request.fileName || 'Imported batch'} was rejected because a duplicate member was detected.`, user);
-          addNotification('Batch import rejected', duplicateReason, 'warning', {
-            actionType: 'reject',
-            reason: duplicateReason,
-            recipient: request.requestedBy,
-          });
-          return;
-        }
-
-        const nextMembers = importedBatchMembers.map((item, index) => ({
+            && String(member.contactNumber || '').trim() === String(item.contactNumber || '').trim())))
+          .map((item, index) => ({
           ...item,
           id: item.id || nextMemberRowId(database.members || []).replace(/(\d+)$/, String(index + 1).padStart(5, '0')),
           memberId: item.memberId || item.cifNumber || nextMemberId(database.members || [], item.membershipDate || now.slice(0, 10)),
@@ -891,8 +866,11 @@ export function DataProvider({ children }) {
         await deleteSupabaseRows('requests', [request.id, request.requestId]);
         const refreshedDatabase = await loadDatabaseFromSupabase();
         setDatabase(refreshedDatabase);
-        addActivity('Approved Member Batch', `${request.fileName || 'Imported batch'} was approved.`, user);
-        addNotification('Batch approved', `${request.fileName || 'An imported batch'} was approved.`, 'success', {
+        const validCount = importedBatchMembers.filter((item) => String(item.importStatus || item.validation || '').trim().toLowerCase() === 'valid' || item.isValid === true).length;
+        const invalidCount = importedBatchMembers.filter((item) => String(item.importStatus || item.validation || '').trim().toLowerCase() === 'invalid' || item.statusTone === 'invalid' || item.isValid === false && !String(item.importStatus || '').trim()).length;
+        const duplicateCount = importedBatchMembers.filter((item) => String(item.importStatus || item.validation || '').trim().toLowerCase() === 'duplicate' || item.isDuplicate === true || item.statusTone === 'duplicate').length;
+        addActivity('Approved Member Batch', `${request.fileName || 'Imported batch'} was approved. ${validCount} valid row(s) were added; ${invalidCount} invalid and ${duplicateCount} duplicate row(s) were skipped.`, user);
+        addNotification('Batch approved', `${request.fileName || 'An imported batch'} was approved. ${validCount} valid row(s) were added; ${invalidCount} invalid and ${duplicateCount} duplicate row(s) were skipped.`, 'success', {
           actionType: 'approve',
           reason: approvalReason,
           recipient: request.requestedBy,

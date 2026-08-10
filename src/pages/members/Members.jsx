@@ -1277,33 +1277,37 @@ export default function Members() {
       return;
     }
 
-    const importedMembers = validRows.map((row, index) => {
+    const importedMembers = rows.map((row, index) => {
       const rowNumber = row.rowNumber || index + 1;
       const member = mapImportedMemberRow({
         ...row.raw,
         __rowNumber: rowNumber,
         __sourceRow: rowNumber,
       }, row.cifNumber || '');
-  const contributionDate =
-    row.lastContributionDate
-    || row.normalized?.lastContributionDate
-    || getImportedContributionDate(row.raw)
-    || member.lastContributionDate
-    || member.membershipDate
-    || todayIso();
-    return {
-      ...member,
-      cifNumber: row.cifNumber || member.cifNumber,
-      memberId: row.cifNumber || member.memberId,
-      fullName: row.member || member.fullName,
-      full_name: row.member || member.fullName,
-      barangay: row.barangay || member.barangay,
-      shareCapital: normalizeImportedNumber(row.savings),
-      contactNumber: row.contact || row.normalized?.contact || member.contactNumber,
-      contact: row.contact || row.normalized?.contact || member.contactNumber,
-      lastContributionDate: contributionDate || member.lastContributionDate || member.membershipDate || todayIso(),
-      membershipDate: contributionDate || member.membershipDate || member.lastContributionDate || todayIso(),
-      status: row.normalized.status,
+      const contributionDate =
+        row.lastContributionDate
+        || row.normalized?.lastContributionDate
+        || getImportedContributionDate(row.raw)
+        || member.lastContributionDate
+        || member.membershipDate
+        || todayIso();
+      return {
+        ...member,
+        cifNumber: row.cifNumber || member.cifNumber,
+        memberId: row.cifNumber || member.memberId,
+        fullName: row.member || member.fullName,
+        full_name: row.member || member.fullName,
+        barangay: row.barangay || member.barangay,
+        shareCapital: normalizeImportedNumber(row.savings),
+        contactNumber: row.contact || row.normalized?.contact || member.contactNumber,
+        contact: row.contact || row.normalized?.contact || member.contactNumber,
+        lastContributionDate: contributionDate || member.lastContributionDate || member.membershipDate || todayIso(),
+        membershipDate: contributionDate || member.membershipDate || member.lastContributionDate || todayIso(),
+        status: row.normalized.status,
+        importStatus: row.importStatus || row.validation || (row.isDuplicate ? 'Duplicate' : row.isValid ? 'Valid' : 'Invalid'),
+        importStatusTone: row.statusTone || (row.isDuplicate ? 'duplicate' : row.isValid ? 'valid' : 'invalid'),
+        isValid: Boolean(row.isValid),
+        isDuplicate: Boolean(row.isDuplicate),
         metadata: {
           ...(member.metadata || {}),
           importedFrom: 'csv_excel',
@@ -1329,7 +1333,7 @@ export default function Members() {
           submittedBy: currentUser?.username || 'staff',
           submittedByName: currentUser?.fullName || currentUser?.username || 'Staff',
           fileName: fileName || 'imported-members.csv',
-          totalMembers: importedMembers.length,
+          totalMembers: rows.length,
           importedMembers,
           metadata: {
             importedFrom: 'csv_excel',
@@ -1337,12 +1341,12 @@ export default function Members() {
             importSummary: { total: rows.length, valid: rows.filter((row) => row.isValid).length, invalid: rows.filter((row) => row.statusTone === 'invalid').length, duplicates: rows.filter((row) => row.isDuplicate).length },
             importBatch: {
               fileName: fileName || 'imported-members.csv',
-              totalMembers: importedMembers.length,
+              totalMembers: rows.length,
               members: importedMembers,
             },
           },
         }, currentUser?.username || 'staff');
-        showToast(`${importedMembers.length} imported member(s) submitted for approval.`, 'success');
+        showToast(`${rows.length} imported row(s) submitted for approval.`, 'success');
       } else {
         const creator = typeof data.createMember === 'function' ? data.createMember : null;
         if (!creator) {
@@ -1407,14 +1411,20 @@ export default function Members() {
         contact: member.contactNumber || '',
         lastContributionDate: member.lastContributionDate || member.membershipDate || member.lastShareCapitalDepositDate || '',
         normalized: { status: member.status || 'Active' },
-        validation: member.validation || 'Valid',
-        statusTone: member.statusTone || 'valid',
-        isValid: true,
-        isDuplicate: false,
+        validation: member.validation || member.importStatus || member.status || 'Valid',
+        statusTone: member.statusTone || member.importStatusTone || String(member.importStatus || member.status || '').toLowerCase() || 'valid',
+        isValid: Boolean(member.isValid ?? String(member.importStatus || member.status || '').toLowerCase() === 'valid'),
+        isDuplicate: Boolean(member.isDuplicate ?? String(member.importStatus || '').toLowerCase() === 'duplicate'),
+        importStatus: member.importStatus || member.status || 'Valid',
       }));
       setRequestTarget(request);
       setImportRows(previewRows);
-      setImportSummary({ total: previewRows.length, valid: previewRows.length, invalid: 0, duplicates: 0 });
+      setImportSummary({
+        total: previewRows.length,
+        valid: previewRows.filter((row) => row.isValid).length,
+        invalid: previewRows.filter((row) => row.statusTone === 'invalid').length,
+        duplicates: previewRows.filter((row) => row.isDuplicate).length,
+      });
       setImportFileName(request.fileName || request.metadata?.fileName || 'imported-members.csv');
       setImportPreviewOnly(true);
       setImportModalOpen(true);
@@ -1738,17 +1748,18 @@ export default function Members() {
 
               <div className="overflow-x-auto rounded-2xl border border-slate-200 dark:border-slate-800">
                 <table className="min-w-full text-left text-sm">
-                  <thead className="bg-[#F8FAFC] text-xs uppercase text-slate-500">
-                    <tr>
-                      <th className="px-6 py-5">CIFK Number</th>
-                      <th className="px-6 py-5">Member</th>
-                      <th className="px-6 py-5">Barangay / Municipality</th>
-                      <th className="px-6 py-5">Contribution</th>
-                      <th className="px-6 py-5">Contact</th>
-                      <th className="px-6 py-5">Last Contribution Date</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-[#E2E8F0]">
+                    <thead className="bg-[#F8FAFC] text-xs uppercase text-slate-500">
+                      <tr>
+                        <th className="px-6 py-5">CIFK Number</th>
+                        <th className="px-6 py-5">Member</th>
+                        <th className="px-6 py-5">Barangay / Municipality</th>
+                        <th className="px-6 py-5">Contribution</th>
+                        <th className="px-6 py-5">Contact</th>
+                        <th className="px-6 py-5">Last Contribution Date</th>
+                        <th className="px-6 py-5">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-[#E2E8F0]">
                     {importRows.map((row) => (
                       <tr
                         key={`${row.rowNumber}-${row.cifNumber || row.member || ''}`}
@@ -1760,6 +1771,11 @@ export default function Members() {
                         <td className="px-6 py-5 whitespace-nowrap">₱{row.savings ? Number(String(row.savings).replace(/,/g, '')).toLocaleString('en-PH') : '0'}</td>
                         <td className="px-6 py-5 whitespace-nowrap">{row.contact || row.contactNumber || row.normalized?.contact || 'â€”'}</td>
                         <td className="px-6 py-5 whitespace-nowrap">{row.lastContributionDate ? formatDate(row.lastContributionDate) : 'â€”'}</td>
+                        <td className="px-6 py-5 whitespace-nowrap">
+                          <Badge>
+                            {row.validation || row.importStatus || (row.isDuplicate ? 'Duplicate' : row.isValid ? 'Valid' : 'Invalid')}
+                          </Badge>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
