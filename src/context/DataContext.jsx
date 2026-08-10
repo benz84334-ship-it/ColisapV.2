@@ -13,6 +13,7 @@ import {
 } from '../utils/memberStatus.js';
 import {
   freshDatabase,
+  deleteSupabaseRows,
   loadDatabaseFromSupabase,
   approveMemberRequestInSupabase,
   resetSupabaseDatabase,
@@ -261,6 +262,12 @@ function stripRequestIdentity(request = {}) {
   const {
     id,
     requestId,
+    requestType,
+    requestKind,
+    approvalQueue,
+    fileName,
+    totalMembers,
+    submittedByName,
     ...rest
   } = request || {};
   return rest;
@@ -538,49 +545,51 @@ export function DataProvider({ children }) {
   }, [addActivity, addNotification, database.members, isDatabaseLoading, systemDate, updateKey]);
 
   const createMember = useCallback(
-    (member, user) => {
-      updateKey('members', (members = []) => {
-        const existingMembers = Array.isArray(members) ? members : [];
-        const generatedMemberRowId = nextMemberRowId(existingMembers);
-        const providedIdentifier = String(member.memberId || member.cifNumber || '').trim();
-        const generatedIdentifier = nextCifNumber(existingMembers, member.membershipDate || todayIso());
-        const nextSharedCode = providedIdentifier
-          ? (
-              isDuplicateMemberId(existingMembers, providedIdentifier) || isDuplicateCifNumber(existingMembers, providedIdentifier)
-                ? generatedIdentifier
-                : providedIdentifier
-            )
-          : generatedIdentifier;
-        const nextBeneficiaries = normalizeBeneficiaries(member.beneficiaries).map((beneficiary, index) => ({
-          ...beneficiary,
-          memberId: generatedMemberRowId,
-          sortOrder: index,
-        }));
-        const nextMember = {
-          ...member,
-          branch: member.branch || getActorBranch(database.users, user),
-          id: generatedMemberRowId,
-          memberId: nextSharedCode,
-          cifNumber: nextSharedCode,
-          photo: member.photo || avatarForName(member.fullName),
-          lastShareCapitalDepositDate: member.lastShareCapitalDepositDate || member.lastContributionDate || member.membershipDate || todayIso(),
-          lastContributionDate: member.lastContributionDate || member.membershipDate || todayIso(),
-          membershipDate: member.lastContributionDate || member.membershipDate || todayIso(),
-          beneficiaries: nextBeneficiaries,
-          createdAt: new Date().toISOString(),
-        };
+    async (member, user) => {
+      const existingMembers = Array.isArray(database.members) ? database.members : [];
+      const generatedMemberRowId = nextMemberRowId(existingMembers);
+      const providedIdentifier = String(member.memberId || member.cifNumber || '').trim();
+      const generatedIdentifier = nextCifNumber(existingMembers, member.membershipDate || todayIso());
+      const nextSharedCode = providedIdentifier
+        ? (
+            isDuplicateMemberId(existingMembers, providedIdentifier) || isDuplicateCifNumber(existingMembers, providedIdentifier)
+              ? generatedIdentifier
+              : providedIdentifier
+          )
+        : generatedIdentifier;
+      const nextBeneficiaries = normalizeBeneficiaries(member.beneficiaries).map((beneficiary, index) => ({
+        ...beneficiary,
+        memberId: generatedMemberRowId,
+        sortOrder: index,
+      }));
+      const nextMember = {
+        ...member,
+        branch: member.branch || getActorBranch(database.users, user),
+        id: generatedMemberRowId,
+        memberId: nextSharedCode,
+        cifNumber: nextSharedCode,
+        photo: member.photo || avatarForName(member.fullName),
+        lastShareCapitalDepositDate: member.lastShareCapitalDepositDate || member.lastContributionDate || member.membershipDate || todayIso(),
+        lastContributionDate: member.lastContributionDate || member.membershipDate || todayIso(),
+        membershipDate: member.lastContributionDate || member.membershipDate || todayIso(),
+        beneficiaries: nextBeneficiaries,
+        createdAt: new Date().toISOString(),
+      };
+      const persistedMember = {
+        ...nextMember,
+        status: member?.metadata?.importedFrom === 'csv_excel' || member?.metadata?.preserveImportedValues
+          ? (member.status || nextMember.status || 'Active')
+          : getComputedMemberStatus(nextMember, database.loans),
+      };
 
-        return [{
-          ...nextMember,
-          status: member?.metadata?.importedFrom === 'csv_excel' || member?.metadata?.preserveImportedValues
-            ? (member.status || nextMember.status || 'Active')
-            : getComputedMemberStatus(nextMember, database.loans),
-        }, ...members];
-      });
+      const nextMembers = [persistedMember, ...existingMembers];
+      setDatabase((current) => ({ ...current, members: nextMembers }));
+      await saveSupabaseKey('members', nextMembers);
       addActivity('Added Member', `${member.fullName} was added to member records.`, user);
       addNotification('New member', `${member.fullName} is now registered.`, 'success');
+      return persistedMember;
     },
-    [addActivity, addNotification, database.loans, database.users, updateKey],
+    [addActivity, addNotification, database.loans, database.members, database.users],
   );
 
   const createMembersBatch = useCallback(
@@ -668,6 +677,16 @@ export function DataProvider({ children }) {
       const duplicateReason = duplicateMember
         ? `Duplicate CIFK Number. ${String(request.cifNumber || nextCifValue).trim()} is already registered to an existing member.`
         : '';
+      if (duplicateMember) {
+        addActivity('Rejected Member Request', `${request.fullName || 'Member request'} was rejected because the CIFK number already exists.`, user);
+        addNotification('Duplicate CIFK rejected', duplicateReason, 'warning', {
+          actionType: 'reject',
+          reason: duplicateReason,
+          recipient: request.requestedBy || user,
+          memberId: duplicateMember.id,
+        });
+        throw new Error(duplicateReason);
+      }
       const nextRequest = {
         ...stripRequestIdentity(request),
         id: request.id || nextRequestNumberValue,
@@ -679,10 +698,16 @@ export function DataProvider({ children }) {
         cifNumber: nextCifValue,
         requestStatus: duplicateMember ? 'Rejected' : 'Pending',
         requestedBy: request.requestedBy || user,
+        requestedByName: request.requestedByName || request.submittedByName || user,
         submittedAt: new Date().toISOString(),
         createdAt: new Date().toISOString(),
         claimNumber,
         claimantName,
+        fileName: request.fileName || request.metadata?.fileName || request.fullName || request.memberName || '',
+        totalMembers: Number.isFinite(Number(request.totalMembers))
+          ? Number(request.totalMembers)
+          : (Array.isArray(request.importedMembers) ? request.importedMembers.length : 1),
+        submittedByName: request.submittedByName || request.requestedByName || user,
         rejectedAt: duplicateMember ? new Date().toISOString() : null,
         rejectionReason: duplicateReason || request.rejectionReason || null,
         approvalReason: duplicateMember ? null : (request.approvalReason || null),
@@ -690,16 +715,6 @@ export function DataProvider({ children }) {
       const nextRequests = [nextRequest, ...requests];
       setDatabase((current) => ({ ...current, requests: nextRequests }));
       await saveSupabaseKey('requests', [nextRequest]);
-      if (duplicateMember) {
-        addActivity('Rejected Member Request', `${request.fullName || 'Member request'} was automatically rejected because the CIFK number already exists.`, user);
-        addNotification('Duplicate CIFK rejected', duplicateReason, 'warning', {
-          actionType: 'reject',
-          reason: duplicateReason,
-          recipient: request.requestedBy || user,
-          memberId: duplicateMember.id,
-        });
-        return;
-      }
       addActivity('Submitted Member Request', `${request.fullName || 'Member request'} was submitted.`, user);
       addNotification('New member request', `${request.fullName || 'A member request'} was sent for manager approval.`, 'info');
     },
@@ -717,6 +732,11 @@ export function DataProvider({ children }) {
           requestType: isClaimantRequest ? 'Claimant Application' : (merged.requestType || 'Member Request'),
           requestKind: isClaimantRequest ? 'claimant' : (merged.requestKind || 'member'),
           approvalQueue: isClaimantRequest ? 'claimant' : (merged.approvalQueue || ''),
+          fileName: merged.fileName || merged.metadata?.fileName || merged.fullName || merged.memberName || '',
+          totalMembers: Number.isFinite(Number(merged.totalMembers))
+            ? Number(merged.totalMembers)
+            : (Array.isArray(merged.importedMembers) ? merged.importedMembers.length : 1),
+          submittedByName: merged.submittedByName || merged.requestedByName || merged.requestedBy || 'staff',
         };
       });
       setDatabase((current) => ({ ...current, requests }));
@@ -790,6 +810,95 @@ export function DataProvider({ children }) {
         || request.metadata?.claimantApplication?.deceased?.coverageStatus
         || '',
       );
+      const importedBatchMembers = Array.isArray(request.importedMembers)
+        ? request.importedMembers
+        : Array.isArray(request.metadata?.importBatch?.members)
+          ? request.metadata.importBatch.members
+          : [];
+      const isImportedMemberBatch = request.requestType === 'Imported Member Batch' || request.requestKind === 'batch-import' || request.approvalQueue === 'member-import';
+      if (!isClaimRequest && isImportedMemberBatch && importedBatchMembers.length) {
+        const duplicateMember = importedBatchMembers.find((item) =>
+          findMemberByCifNumber(database.members || [], item.cifNumber || item.memberId)
+          || (item.fullName && (database.members || []).some((member) =>
+            String(member.fullName || '').trim().toLowerCase() === String(item.fullName || item.member || '').trim().toLowerCase()
+            && String(member.contactNumber || '').trim() === String(item.contactNumber || '').trim()))
+        );
+        if (duplicateMember) {
+          const duplicateReason = `Duplicate member detected in batch import: ${duplicateMember.fullName || duplicateMember.member || duplicateMember.cifNumber || duplicateMember.memberId}.`;
+          const rejectedRequest = {
+            ...request,
+            requestStatus: 'Rejected',
+            rejectedAt: now,
+            rejectionReason: duplicateReason,
+            approvalReason: null,
+            updatedAt: now,
+          };
+          const requestKeys = new Set([request.id, request.requestId].filter(Boolean));
+          const nextRequests = (database.requests || []).map((item) =>
+            requestKeys.has(item.id) || requestKeys.has(item.requestId) ? rejectedRequest : item,
+          );
+          setDatabase((current) => ({ ...current, requests: nextRequests }));
+          await saveSupabaseKey('requests', [rejectedRequest]);
+          addActivity('Rejected Member Batch', `${request.fileName || 'Imported batch'} was rejected because a duplicate member was detected.`, user);
+          addNotification('Batch import rejected', duplicateReason, 'warning', {
+            actionType: 'reject',
+            reason: duplicateReason,
+            recipient: request.requestedBy,
+          });
+          return;
+        }
+
+        const nextMembers = importedBatchMembers.map((item, index) => ({
+          ...item,
+          id: item.id || nextMemberRowId(database.members || []).replace(/(\d+)$/, String(index + 1).padStart(5, '0')),
+          memberId: item.memberId || item.cifNumber || nextMemberId(database.members || [], item.membershipDate || now.slice(0, 10)),
+          cifNumber: item.cifNumber || item.memberId || nextRandomCifNumber(database.members || [], item.membershipDate || now.slice(0, 10)),
+          applicationStatus: item.applicationStatus || 'New',
+          membershipDate: item.membershipDate || item.lastContributionDate || now.slice(0, 10),
+          lastContributionDate: item.lastContributionDate || item.membershipDate || now.slice(0, 10),
+          lastShareCapitalDepositDate: item.lastShareCapitalDepositDate || item.lastContributionDate || item.membershipDate || now.slice(0, 10),
+          approvingAuthority: approvedBy,
+          approvalDate: now.slice(0, 10),
+          actionTaken: 'Approved',
+          status: 'Active',
+          requestStatus: undefined,
+          updatedAt: now,
+        }));
+        const mergedMembers = [
+          ...nextMembers,
+          ...(database.members || []).filter((member) => !nextMembers.some((item) => item.id === member.id || item.cifNumber === member.cifNumber || item.memberId === member.memberId)),
+        ];
+        const approvedRequest = {
+          ...request,
+          requestStatus: 'Approved',
+          approvedBy,
+          approvedAt: now,
+          updatedAt: now,
+          status: 'Approved',
+          actionTaken: 'Approved',
+          approvalReason,
+        };
+        const requestKeys = new Set([request.id, request.requestId].filter(Boolean));
+        const nextRequests = (database.requests || []).map((item) =>
+          requestKeys.has(item.id) || requestKeys.has(item.requestId) ? approvedRequest : item,
+        );
+        setDatabase((current) => ({
+          ...current,
+          members: mergedMembers,
+          requests: nextRequests.filter((item) => !requestKeys.has(item.id) && !requestKeys.has(item.requestId)),
+        }));
+        await saveSupabaseKey('members', mergedMembers);
+        await deleteSupabaseRows('requests', [request.id, request.requestId]);
+        const refreshedDatabase = await loadDatabaseFromSupabase();
+        setDatabase(refreshedDatabase);
+        addActivity('Approved Member Batch', `${request.fileName || 'Imported batch'} was approved.`, user);
+        addNotification('Batch approved', `${request.fileName || 'An imported batch'} was approved.`, 'success', {
+          actionType: 'approve',
+          reason: approvalReason,
+          recipient: request.requestedBy,
+        });
+        return;
+      }
       const nextMemberRowIdValue = nextMemberRowId(database.members || []);
       const approvedMember = isClaimRequest ? null : {
         id: nextMemberRowIdValue,
@@ -898,10 +1007,6 @@ export function DataProvider({ children }) {
         actionTaken: 'Approved',
         approvalReason,
       };
-      const requestKeys = new Set([request.id, request.requestId].filter(Boolean));
-      const nextRequests = (database.requests || []).map((item) =>
-        requestKeys.has(item.id) || requestKeys.has(item.requestId) ? approvedRequest : item,
-      );
       const nextMembers = isClaimRequest
         ? (database.members || [])
         : [
@@ -936,13 +1041,14 @@ export function DataProvider({ children }) {
         await saveSupabaseKey('availments', nextAvailments);
       } else {
         setDatabase((current) => ({ ...current, members: nextMembers }));
+        await saveSupabaseKey('members', nextMembers);
       }
       setDatabase((current) => ({
         ...current,
-        requests: nextRequests,
+        requests: (database.requests || []).filter((item) => !matchesRequestKey(item, request.id) && !matchesRequestKey(item, request.requestId)),
         members: nextMembers,
       }));
-      await saveSupabaseKey('requests', [approvedRequest]);
+      await deleteSupabaseRows('requests', [request.id, request.requestId]);
 
       addActivity(isClaimRequest ? 'Approved Claimant Application' : 'Approved Member Request', `${approvedRequest.fullName || 'Request'} was approved.`, user);
       addNotification('Request approved', `${approvedRequest.fullName || 'A member request'} was approved.`, 'success', {

@@ -105,6 +105,7 @@ export default function Reports() {
         { key: 'date', label: 'Membership Date', render: (row) => formatDate(row.date) },
         { key: 'barangay', label: 'Barangay / Municipality', render: (row) => row.barangay || 'Not provided' },
         { key: 'contact', label: 'Contact', render: (row) => row.contact || 'Not provided' },
+        { key: 'approver', label: 'Approver', render: (row) => row.approver || 'Not provided' },
       ];
 
   const generateReport = () => {

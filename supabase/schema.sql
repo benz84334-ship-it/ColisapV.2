@@ -115,6 +115,7 @@ drop function if exists public.generate_cifk_member_number();
 
 create sequence if not exists public.member_import_row_seq;
 create sequence if not exists public.member_import_cif_seq;
+create sequence if not exists public.request_import_seq;
 
 create or replace function public.generate_cifk_member_number_safe()
 returns text
@@ -185,17 +186,12 @@ declare
   next_sequence bigint;
 begin
   if coalesce(new.request_id, '') = '' then
-    select coalesce(max(seq), 0) + 1
-      into next_sequence
-    from (
-      select (regexp_match(request_id, '^REQ-\d{4}-(\d+)$'))[1]::bigint as seq
-      from public.requests
-      where request_id ~ ('^REQ-' || current_year || '-\d+$')
-      union all
-      select (regexp_match(id, '^REQ-\d{4}-(\d+)$'))[1]::bigint as seq
-      from public.members
-      where id ~ ('^REQ-' || current_year || '-\d+$')
-    ) sequence_pool;
+    next_sequence := nextval('public.request_import_seq');
+
+    if next_sequence < 10000 then
+      perform setval('public.request_import_seq', 10000, true);
+      next_sequence := nextval('public.request_import_seq');
+    end if;
 
     new.request_id := 'REQ-' || current_year || '-' || lpad(next_sequence::text, 5, '0');
   end if;
@@ -207,6 +203,26 @@ begin
   return new;
 end;
 $$;
+
+select setval(
+  'public.request_import_seq',
+  greatest(
+    coalesce((
+      select max(seq)
+      from (
+        select (regexp_match(request_id, '^REQ-\d{4}-(\d+)$'))[1]::bigint as seq
+        from public.requests
+        where request_id ~ '^REQ-\d{4}-\d+$'
+        union all
+        select (regexp_match(id, '^REQ-\d{4}-(\d+)$'))[1]::bigint as seq
+        from public.requests
+        where id ~ '^REQ-\d{4}-\d+$'
+      ) existing_request_sequences
+    ), 9999),
+    9999
+  ),
+  true
+);
 
 create index if not exists requests_request_id_idx on public.requests (request_id);
 create index if not exists requests_member_id_idx on public.requests (member_id);
@@ -223,7 +239,163 @@ language plpgsql
 security definer
 set search_path = public
 as $$
+declare
+  request_row public.requests%rowtype;
 begin
+  select *
+    into request_row
+    from public.requests
+   where request_id = p_request_id
+      or id = p_request_id
+   limit 1;
+
+  if not found then
+    return;
+  end if;
+
+  if coalesce(request_row.request_type, '') = 'Imported Member Batch'
+     or coalesce(request_row.request_kind, '') = 'batch-import'
+     or coalesce(request_row.approval_queue, '') = 'member-import' then
+    insert into public.members (
+      id,
+      member_id,
+      cif_number,
+      application_status,
+      first_name,
+      middle_name,
+      last_name,
+      suffix_name,
+      full_name,
+      address,
+      barangay,
+      birthdate,
+      age_years,
+      age_months,
+      gender,
+      civil_status,
+      contact_number,
+      occupation,
+      employer,
+      office_address,
+      religion,
+      religion_other,
+      dependents,
+      savings_account_no,
+      last_contribution_date,
+      signed_date,
+      witness_staff,
+      action_taken,
+      approving_authority,
+      approval_date,
+      findings,
+      status,
+      status_override,
+      branch,
+      import_order,
+      share_capital,
+      last_share_capital_deposit_date,
+      beneficiaries,
+      photo,
+      metadata,
+      created_at,
+      updated_at
+    )
+    select
+      coalesce(nullif(trim(item->>'id'), ''), nullif(trim(item->>'memberId'), ''), nullif(trim(item->>'cifNumber'), ''), gen_random_uuid()::text),
+      coalesce(nullif(trim(item->>'memberId'), ''), nullif(trim(item->>'cifNumber'), ''), nullif(trim(item->>'id'), ''), gen_random_uuid()::text),
+      nullif(trim(item->>'cifNumber'), ''),
+      coalesce(nullif(trim(item->>'applicationStatus'), ''), 'New'),
+      nullif(trim(item->>'firstName'), ''),
+      nullif(trim(item->>'middleName'), ''),
+      nullif(trim(item->>'lastName'), ''),
+      nullif(trim(item->>'suffixName'), ''),
+      coalesce(nullif(trim(item->>'fullName'), ''), nullif(trim(item->>'member'), ''), nullif(trim(item->>'memberName'), ''), 'Unnamed member'),
+      nullif(trim(item->>'address'), ''),
+      nullif(trim(item->>'barangay'), ''),
+      case when nullif(trim(item->>'birthdate'), '') is null then null else trim(item->>'birthdate')::date end,
+      case when nullif(trim(item->>'ageYears'), '') is null then null else trim(item->>'ageYears')::integer end,
+      case when nullif(trim(item->>'ageMonths'), '') is null then null else trim(item->>'ageMonths')::integer end,
+      nullif(trim(item->>'gender'), ''),
+      nullif(trim(item->>'civilStatus'), ''),
+      nullif(trim(item->>'contactNumber'), ''),
+      nullif(trim(item->>'occupation'), ''),
+      nullif(trim(item->>'employer'), ''),
+      nullif(trim(item->>'officeAddress'), ''),
+      nullif(trim(item->>'religion'), ''),
+      nullif(trim(item->>'religionOther'), ''),
+      coalesce(case when nullif(trim(item->>'dependents'), '') is null then null else trim(item->>'dependents')::integer end, 0),
+      nullif(trim(item->>'savingsAccountNo'), ''),
+      coalesce(
+        case when nullif(trim(item->>'lastContributionDate'), '') is null then null else trim(item->>'lastContributionDate')::date end,
+        case when nullif(trim(item->>'membershipDate'), '') is null then null else trim(item->>'membershipDate')::date end,
+        current_date
+      ),
+      case when nullif(trim(item->>'signedDate'), '') is null then null else trim(item->>'signedDate')::date end,
+      nullif(trim(item->>'witnessStaff'), ''),
+      coalesce(nullif(trim(item->>'actionTaken'), ''), 'Approved'),
+      coalesce(p_approved_by, nullif(trim(item->>'approvingAuthority'), '')),
+      current_date,
+      nullif(trim(item->>'findings'), ''),
+      'Active',
+      nullif(trim(item->>'statusOverride'), ''),
+      coalesce(nullif(trim(item->>'branch'), ''), request_row.branch, 'Main Office'),
+      case when nullif(trim(item->>'importOrder'), '') is null then null else trim(item->>'importOrder')::integer end,
+      coalesce(case when nullif(trim(item->>'shareCapital'), '') is null then null else trim(item->>'shareCapital')::numeric end, 0),
+      case
+        when nullif(trim(item->>'lastShareCapitalDepositDate'), '') is not null then trim(item->>'lastShareCapitalDepositDate')::date
+        when nullif(trim(item->>'lastContributionDate'), '') is not null then trim(item->>'lastContributionDate')::date
+        when nullif(trim(item->>'membershipDate'), '') is not null then trim(item->>'membershipDate')::date
+        else current_date
+      end,
+      coalesce(item->'beneficiaries', '[]'::jsonb),
+      nullif(trim(item->>'photo'), ''),
+      coalesce(item->'metadata', '{}'::jsonb),
+      now(),
+      now()
+    from jsonb_array_elements(coalesce(request_row.imported_members, '[]'::jsonb)) as item
+    on conflict (id) do update set
+      member_id = excluded.member_id,
+      cif_number = excluded.cif_number,
+      application_status = excluded.application_status,
+      first_name = excluded.first_name,
+      middle_name = excluded.middle_name,
+      last_name = excluded.last_name,
+      suffix_name = excluded.suffix_name,
+      full_name = excluded.full_name,
+      address = excluded.address,
+      barangay = excluded.barangay,
+      birthdate = excluded.birthdate,
+      age_years = excluded.age_years,
+      age_months = excluded.age_months,
+      gender = excluded.gender,
+      civil_status = excluded.civil_status,
+      contact_number = excluded.contact_number,
+      occupation = excluded.occupation,
+      employer = excluded.employer,
+      office_address = excluded.office_address,
+      religion = excluded.religion,
+      religion_other = excluded.religion_other,
+      dependents = excluded.dependents,
+      savings_account_no = excluded.savings_account_no,
+      last_contribution_date = excluded.last_contribution_date,
+      signed_date = excluded.signed_date,
+      witness_staff = excluded.witness_staff,
+      action_taken = excluded.action_taken,
+      approving_authority = excluded.approving_authority,
+      approval_date = excluded.approval_date,
+      findings = excluded.findings,
+      status = excluded.status,
+      status_override = excluded.status_override,
+      branch = excluded.branch,
+      import_order = excluded.import_order,
+      share_capital = excluded.share_capital,
+      last_share_capital_deposit_date = excluded.last_share_capital_deposit_date,
+      beneficiaries = excluded.beneficiaries,
+      photo = excluded.photo,
+      metadata = excluded.metadata,
+      updated_at = now();
+  end if;
+
   return query
   update public.requests
   set
@@ -246,6 +418,14 @@ security definer
 set search_path = public
 as $$
 begin
+  new.imported_members := coalesce(new.imported_members, '[]'::jsonb);
+  new.metadata := coalesce(new.metadata, '{}'::jsonb);
+  new.file_name := nullif(trim(coalesce(new.file_name, new.metadata->>'fileName', '')), '');
+  new.submitted_by_name := nullif(trim(coalesce(new.submitted_by_name, new.requested_by_name, '')), '');
+  if new.total_members is null or new.total_members < 0 then
+    new.total_members := 0;
+  end if;
+
   if coalesce(new.request_status, '') <> coalesce(old.request_status, '') then
     new.status := new.request_status;
   elsif coalesce(new.status, '') <> coalesce(old.status, '') then
@@ -331,7 +511,7 @@ begin
     id, member_id, cif_number, application_status, first_name, middle_name, last_name, suffix_name, full_name,
     address, barangay, birthdate, age_years, age_months, gender, civil_status, contact_number,
     occupation, employer, office_address, religion, religion_other, dependents, savings_account_no, last_contribution_date,
-    signed_date, witness_staff, action_taken, approving_authority, approval_date, findings, status,
+    membership_date, signed_date, witness_staff, action_taken, approving_authority, approval_date, findings, status,
     status_override, branch, share_capital, last_share_capital_deposit_date, benefit_category,
     beneficiaries, photo, metadata, created_at, updated_at
   )
@@ -343,7 +523,7 @@ begin
     new.first_name, new.middle_name, new.last_name, new.suffix_name, new.full_name,
     new.address, new.barangay, new.birthdate, new.age_years, new.age_months, new.gender, new.civil_status, new.contact_number,
     new.occupation, new.employer, new.office_address, coalesce(new.religion_other, new.religion), new.religion_other, new.dependents,
-    new.savings_account_no, coalesce(new.last_contribution_date, current_date), coalesce(new.signed_date, current_date), new.witness_staff,
+    new.savings_account_no, coalesce(new.last_contribution_date, current_date), coalesce(new.membership_date, new.last_contribution_date, current_date), coalesce(new.signed_date, current_date), new.witness_staff,
     coalesce(new.action_taken, 'Approved'), coalesce(new.approving_authority, new.requested_by, 'System'),
     coalesce(new.approval_date, current_date), new.findings, coalesce(new.status, 'Active'), null,
     coalesce(new.branch, 'Main Office'), coalesce(new.share_capital, 0), new.last_share_capital_deposit_date,
@@ -373,6 +553,7 @@ begin
     dependents = excluded.dependents,
     savings_account_no = excluded.savings_account_no,
     last_contribution_date = excluded.last_contribution_date,
+    membership_date = excluded.membership_date,
     signed_date = excluded.signed_date,
     witness_staff = excluded.witness_staff,
     action_taken = excluded.action_taken,
@@ -540,6 +721,7 @@ declare
   target_member_id text;
   recalculated_share_capital numeric(14,2);
   recalculated_last_deposit date;
+  transaction_count integer;
 begin
   if tg_op = 'DELETE' then
     target_member_id := old.member_id;
@@ -553,14 +735,19 @@ begin
 
   select
     coalesce(sum(coalesce(t.amount, 0)), 0),
-    max(t.transaction_date)
-  into recalculated_share_capital, recalculated_last_deposit
+    max(t.transaction_date),
+    count(*)
+  into recalculated_share_capital, recalculated_last_deposit, transaction_count
   from public.share_capital_transactions t
   where t.member_id = target_member_id;
 
+  if transaction_count = 0 then
+    return case when tg_op = 'DELETE' then old else new end;
+  end if;
+
   update public.members m
   set
-    share_capital = coalesce(recalculated_share_capital, 0),
+    share_capital = recalculated_share_capital,
     last_share_capital_deposit_date = coalesce(recalculated_last_deposit, m.last_share_capital_deposit_date),
     updated_at = now()
   where m.id = target_member_id;
@@ -642,6 +829,10 @@ begin
   first_name := coalesce(nullif(trim(payload->>'firstName'), ''), nullif(trim(payload->>'first_name'), ''), nullif(trim(payload->>'First Name'), ''), nullif(trim(payload->>'First name'), ''));
   last_name := coalesce(nullif(trim(payload->>'lastName'), ''), nullif(trim(payload->>'last_name'), ''), nullif(trim(payload->>'Last Name'), ''), nullif(trim(payload->>'Last name'), ''));
   full_name := coalesce(sheet_member_name, nullif(trim(payload->>'full_name'), ''));
+  if full_name is not null then
+    first_name := coalesce(first_name, nullif(split_part(full_name, ' ', 1), ''));
+    last_name := coalesce(last_name, nullif(regexp_replace(full_name, '^.*\s+', ''), ''), nullif(split_part(full_name, ' ', 2), ''));
+  end if;
   middle_name := coalesce(nullif(trim(payload->>'middleName'), ''), nullif(trim(payload->>'middle_name'), ''), nullif(trim(payload->>'Middle Name'), ''), nullif(trim(payload->>'Middle name'), ''));
   address_text := coalesce(nullif(trim(payload->>'address'), ''), nullif(trim(payload->>'Address'), ''), nullif(trim(payload->>'Home Address'), ''));
   barangay_text := coalesce(
@@ -826,6 +1017,7 @@ create table if not exists public.members (
   dependents integer not null default 0,
   savings_account_no text,
   last_contribution_date date not null default current_date,
+  membership_date date,
   signed_date date,
   witness_staff text,
   action_taken text,
@@ -932,6 +1124,7 @@ create table if not exists public.requests (
   dependents integer not null default 0,
   savings_account_no text,
   last_contribution_date date not null default current_date,
+  membership_date date,
   signed_date date,
   witness_staff text,
   action_taken text,
@@ -960,6 +1153,20 @@ alter table public.requests add column if not exists request_type text not null 
 alter table public.requests add column if not exists request_kind text;
 alter table public.requests add column if not exists approval_queue text;
 alter table public.requests add column if not exists last_contribution_date date not null default current_date;
+alter table public.requests add column if not exists membership_date date;
+alter table public.requests add column if not exists imported_members jsonb not null default '[]'::jsonb;
+alter table public.requests add column if not exists file_name text;
+alter table public.requests add column if not exists total_members integer not null default 0;
+alter table public.requests add column if not exists submitted_by_name text;
+
+update public.members
+set
+  first_name = coalesce(nullif(first_name, ''), nullif(split_part(full_name, ' ', 1), '')),
+  last_name = coalesce(nullif(last_name, ''), nullif(regexp_replace(full_name, '^.*\s+', ''), ''))
+where (first_name is null or trim(first_name) = '')
+  and (last_name is null or trim(last_name) = '')
+  and full_name is not null
+  and trim(full_name) <> '';
 
 create table if not exists public.share_capital_transactions (
   id text primary key,

@@ -500,6 +500,10 @@ const TABLE_SYNCERS = {
       address: row.address,
       relationship: row.relationship,
       sortOrder: row.sort_order,
+      importedMembers: row.imported_members || row.metadata?.importBatch?.members || [],
+      fileName: row.file_name || row.metadata?.fileName || '',
+      totalMembers: row.total_members || row.metadata?.totalMembers || 0,
+      submittedByName: row.submitted_by_name || row.requested_by_name || '',
       metadata: row.metadata || {},
       createdAt: row.created_at,
       updatedAt: row.updated_at,
@@ -564,6 +568,10 @@ const TABLE_SYNCERS = {
       status: item.status ?? 'Pending',
       beneficiaries: item.beneficiaries ?? [],
       photo: item.photo ?? null,
+      imported_members: item.importedMembers ?? item.metadata?.importBatch?.members ?? null,
+      file_name: item.fileName ?? item.metadata?.fileName ?? null,
+      total_members: item.totalMembers ?? item.metadata?.totalMembers ?? null,
+      submitted_by_name: item.submittedByName ?? item.requestedByName ?? null,
       metadata: {
         ...(item.metadata ?? {}),
         requestKind: item.requestKind ?? item.metadata?.requestKind ?? null,
@@ -635,6 +643,10 @@ const TABLE_SYNCERS = {
       approvalQueue: row.metadata?.approvalQueue || row.approval_queue || row.metadata?.claimantApplication?.approvalQueue || '',
       claimNumber: row.metadata?.claimantApplication?.claimNumber || row.claim_number || row.claimNumber || '',
       claimantName: row.metadata?.claimantName || row.metadata?.claimantApplication?.claimantName || row.claimant_name || row.claimantName || '',
+      importedMembers: row.imported_members || row.metadata?.importBatch?.members || [],
+      fileName: row.file_name || row.metadata?.fileName || '',
+      totalMembers: row.total_members || row.metadata?.totalMembers || 0,
+      submittedByName: row.submitted_by_name || row.requested_by_name || '',
       metadata: row.metadata || {},
       createdAt: row.created_at,
       updatedAt: row.updated_at,
@@ -682,6 +694,10 @@ const TABLE_SYNCERS = {
       dueDate: row.due_date,
       status: row.status,
       remarks: row.remarks,
+      importedMembers: row.imported_members || row.metadata?.importBatch?.members || [],
+      fileName: row.file_name || row.metadata?.fileName || '',
+      totalMembers: row.total_members || row.metadata?.totalMembers || 0,
+      submittedByName: row.submitted_by_name || row.requested_by_name || '',
       metadata: row.metadata || {},
       createdAt: row.created_at,
       updatedAt: row.updated_at,
@@ -717,6 +733,10 @@ const TABLE_SYNCERS = {
       penalty: row.penalty,
       status: row.status,
       remarks: row.remarks,
+      importedMembers: row.imported_members || row.metadata?.importBatch?.members || [],
+      fileName: row.file_name || row.metadata?.fileName || '',
+      totalMembers: row.total_members || row.metadata?.totalMembers || 0,
+      submittedByName: row.submitted_by_name || row.requested_by_name || '',
       metadata: row.metadata || {},
       createdAt: row.created_at,
       updatedAt: row.updated_at,
@@ -761,6 +781,10 @@ const TABLE_SYNCERS = {
       referenceNumber: row.reference_number,
       status: row.status,
       remarks: row.remarks,
+      importedMembers: row.imported_members || row.metadata?.importBatch?.members || [],
+      fileName: row.file_name || row.metadata?.fileName || '',
+      totalMembers: row.total_members || row.metadata?.totalMembers || 0,
+      submittedByName: row.submitted_by_name || row.requested_by_name || '',
       metadata: row.metadata || {},
       createdAt: row.created_at,
       updatedAt: row.updated_at,
@@ -790,6 +814,10 @@ const TABLE_SYNCERS = {
       referenceNumber: row.reference_number,
       encodedBy: row.encoded_by,
       remarks: row.remarks,
+      importedMembers: row.imported_members || row.metadata?.importBatch?.members || [],
+      fileName: row.file_name || row.metadata?.fileName || '',
+      totalMembers: row.total_members || row.metadata?.totalMembers || 0,
+      submittedByName: row.submitted_by_name || row.requested_by_name || '',
       metadata: row.metadata || {},
       contributionTime: row.metadata?.contributionTime || '',
       createdAt: row.created_at,
@@ -818,6 +846,10 @@ const TABLE_SYNCERS = {
       lastContributionDate: row.last_contribution_date,
       statusChangeDate: row.status_change_date,
       reason: row.reason,
+      importedMembers: row.imported_members || row.metadata?.importBatch?.members || [],
+      fileName: row.file_name || row.metadata?.fileName || '',
+      totalMembers: row.total_members || row.metadata?.totalMembers || 0,
+      submittedByName: row.submitted_by_name || row.requested_by_name || '',
       metadata: row.metadata || {},
       createdAt: row.created_at,
       updatedAt: row.updated_at,
@@ -970,6 +1002,10 @@ const TABLE_SYNCERS = {
       createdBy: row.created_by,
       supportingDocuments: row.supporting_documents,
       remarks: row.remarks,
+      importedMembers: row.imported_members || row.metadata?.importBatch?.members || [],
+      fileName: row.file_name || row.metadata?.fileName || '',
+      totalMembers: row.total_members || row.metadata?.totalMembers || 0,
+      submittedByName: row.submitted_by_name || row.requested_by_name || '',
       metadata: row.metadata || {},
       createdAt: row.created_at,
       updatedAt: row.updated_at,
@@ -1044,6 +1080,18 @@ async function syncTableSlice(key, value) {
   const syncer = TABLE_SYNCERS[key];
   if (!syncer || !isSupabaseConfigured) return;
   const rows = Array.isArray(value) ? value : [value];
+  const stripRequestFileName = (row = {}) => {
+    if (key !== 'requests') return row;
+    const { file_name, ...rest } = row;
+    const metadata = {
+      ...(rest.metadata || {}),
+      fileName: rest.file_name || rest.metadata?.fileName || '',
+    };
+    return {
+      ...rest,
+      metadata,
+    };
+  };
   if (syncer.table === 'users') {
     const mapped = rows.filter(Boolean).map(syncer.toRow);
     const { error } = await supabase.from(syncer.table).upsert(mapped, { onConflict: 'id' });
@@ -1074,7 +1122,14 @@ async function syncTableSlice(key, value) {
     return;
   }
   const { error } = await supabase.from(syncer.table).upsert(finalRows, { onConflict: 'id' });
-  if (error) throw error;
+  if (!error) return;
+  if (syncer.table === 'requests' && /(file_name|imported_members|total_members|submitted_by_name)/i.test(error.message || '')) {
+    const fallbackRows = finalRows.map((row) => stripRequestFileName(row));
+    const retry = await supabase.from(syncer.table).upsert(fallbackRows, { onConflict: 'id' });
+    if (!retry.error) return;
+    throw retry.error;
+  }
+  throw error;
 }
 
 async function syncUsersToPublicTable(users = []) {
@@ -1115,6 +1170,10 @@ function fromDbRows(key, rows = []) {
       backupReminderDays: row.backup_reminder_days,
       loanTypes: row.loan_types,
       branchOptions: row.branch_options,
+      importedMembers: row.imported_members || row.metadata?.importBatch?.members || [],
+      fileName: row.file_name || row.metadata?.fileName || '',
+      totalMembers: row.total_members || row.metadata?.totalMembers || 0,
+      submittedByName: row.submitted_by_name || row.requested_by_name || '',
       metadata: row.metadata || {},
     } : {};
   }
@@ -1200,6 +1259,16 @@ export async function saveSupabaseKey(key, value) {
     console.error(`Supabase save failed for ${key}:`, error);
     throw new Error(`Unable to save ${key} to Supabase: ${error.message}`);
   }
+}
+
+export async function deleteSupabaseRows(key, ids = []) {
+  assertSupabaseConfigured();
+  const syncer = TABLE_SYNCERS[key];
+  if (!syncer || !isSupabaseConfigured) return;
+  const cleanIds = Array.isArray(ids) ? ids.map((value) => String(value || '').trim()).filter(Boolean) : [];
+  if (!cleanIds.length) return;
+  const { error } = await supabase.from(syncer.table).delete().in('id', cleanIds);
+  if (error) throw new Error(`Unable to delete ${key} from Supabase: ${error.message}`);
 }
 
 export async function replaceSupabaseDatabase(database) {

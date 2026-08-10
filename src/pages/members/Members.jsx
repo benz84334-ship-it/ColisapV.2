@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { FiCheckCircle, FiEdit2, FiFile, FiPrinter, FiSearch, FiTrash2, FiUpload, FiUserPlus } from 'react-icons/fi';
+﻿import { useEffect, useMemo, useRef, useState } from 'react';
+import { FiCheckCircle, FiCopy, FiEdit2, FiFile, FiPrinter, FiSearch, FiUpload, FiUserPlus } from 'react-icons/fi';
 import { useLocation, useNavigate } from 'react-router-dom';
 import DataTable from '../../components/tables/DataTable.jsx';
 import Badge from '../../components/ui/Badge.jsx';
@@ -452,6 +452,7 @@ const blankMember = {
   beneficiaries: blankBeneficiaries(),
   savingsAccountNo: '',
   membershipDate: todayIso(),
+  lastContributionDate: todayIso(),
   signedDate: todayIso(),
   witnessStaff: '',
   actionTaken: ACTION_TAKEN_OPTIONS[0],
@@ -507,7 +508,7 @@ function CustomerInformationFile({ member }) {
           <DetailItem label="Customer Status" value={member.status} />
           <DetailItem label="COLISAP Category" value={member.benefitCategory} />
           <DetailItem label="Application Status" value={member.applicationStatus} />
-          <DetailItem label="Last Contribution Date" value={formatDate(member.membershipDate)} />
+          <DetailItem label="Membership Date" value={formatDate(member.membershipDate)} />
           <DetailItem label="Savings Account No." value={member.savingsAccountNo} />
         </div>
       </Section>
@@ -739,6 +740,7 @@ function memberForForm(member, today) {
       beneficiaries: blankBeneficiaries(),
       cifNumber: '',
       membershipDate: today,
+      lastContributionDate: today,
       signedDate: today,
       lastShareCapitalDepositDate: today,
     };
@@ -763,6 +765,7 @@ function memberForForm(member, today) {
     actionTaken: member.actionTaken || ACTION_TAKEN_OPTIONS[0],
     cifNumber: new RegExp(`^CIFK-${currentCifYear()}-\\d{5}$`, 'i').test(String(member.cifNumber || '')) ? member.cifNumber : '',
     membershipDate: member.membershipDate || today,
+    lastContributionDate: member.lastContributionDate || member.membershipDate || today,
     signedDate: member.signedDate || today,
     lastShareCapitalDepositDate: member.lastShareCapitalDepositDate || member.membershipDate || today,
   };
@@ -807,6 +810,7 @@ function buildMemberPayload(form, { photoUrl, status, branch, cifNumber, existin
     })),
     savingsAccountNo: form.savingsAccountNo || '',
     membershipDate: form.membershipDate || '',
+    lastContributionDate: form.lastContributionDate || '',
     signedDate: form.signedDate || '',
     witnessStaff: form.witnessStaff || '',
     actionTaken: form.actionTaken || ACTION_TAKEN_OPTIONS[0],
@@ -852,25 +856,41 @@ export default function Members() {
   const [returnedDraft, setReturnedDraft] = useState(blankMember);
   const [reviewDraft, setReviewDraft] = useState(blankMember);
   const [reviewReason, setReviewReason] = useState('');
+  const [importFileName, setImportFileName] = useState('');
+  const [importPreviewOnly, setImportPreviewOnly] = useState(false);
   const csvInputRef = useRef(null);
   const excelInputRef = useRef(null);
+  const previewMembers = (request) => {
+    const members = request?.importedMembers || request?.metadata?.importBatch?.members || [];
+    return Array.isArray(members) ? members : [];
+  };
   const currentForm = isRequestApprovalPage && requestTarget ? reviewDraft : requestTarget ? returnedDraft : form;
   const generatedCifNumber = useMemo(
     () => nextCifNumber([...(scopedData.members || []), ...(scopedData.requests || [])]),
     [scopedData.members, scopedData.requests],
   );
-  const displayedCifNumber = isRequestMemberPage && !editing
-    ? generatedCifNumber
-    : currentForm.cifNumber || generatedCifNumber;
-
-  useEffect(() => {
-    if (!isRequestMemberPage || editing) return;
-    setForm((current) => (
-      current.memberId
-        ? { ...current, cifNumber: generatedCifNumber }
-        : { ...current, memberId: nextMemberId(scopedData.members, todayIso()), cifNumber: generatedCifNumber }
-    ));
-  }, [editing, generatedCifNumber, isRequestMemberPage, scopedData.members]);
+  const requestSummaryRow = useMemo(() => {
+    if (!requestTarget) return null;
+    const previewCount = previewMembers(requestTarget).length || 0;
+    const displayName = requestTarget.fileName
+      || requestTarget.metadata?.fileName
+      || requestTarget.fullName
+      || requestTarget.memberName
+      || requestTarget.claimantName
+      || '—';
+    const submittedBy = requestTarget.submittedByName
+      || requestTarget.requestedByName
+      || requestTarget.requestedBy
+      || '—';
+    return {
+      requestId: requestTarget.requestId || requestTarget.id || requestTarget.request_id || '—',
+      fileName: displayName,
+      submittedBy,
+      totalMembers: String(requestTarget.totalMembers ?? requestTarget.metadata?.totalMembers ?? (previewCount || (requestTarget.requestType === 'Member Request' ? 1 : 0))),
+      dateSubmitted: requestTarget.submittedAt ? formatDate(requestTarget.submittedAt) : '—',
+      status: requestTarget.requestStatus || requestTarget.status || 'Pending',
+    };
+  }, [requestTarget]);
 
   const computedStatus = useMemo(
     () => getComputedMemberStatus({ ...currentForm, id: editing?.id || currentForm.id }, scopedData.loans),
@@ -880,9 +900,22 @@ export default function Members() {
     () => Array.from(new Set([...BARANGAYS, ...scopedData.members.map((member) => barangayOnly(member.barangay)).filter(Boolean)])).sort((a, b) => a.localeCompare(b)),
     [scopedData.members],
   );
+  const copyRequestSummary = async () => {
+    if (!requestSummaryRow) return;
+    const text = [
+      `Request ID\tMember / File Name\tSubmitted By\tTotal Members\tDate Submitted\tStatus`,
+      `${requestSummaryRow.requestId}\t${requestSummaryRow.fileName}\t${requestSummaryRow.submittedBy}\t${requestSummaryRow.totalMembers}\t${requestSummaryRow.dateSubmitted}\t${requestSummaryRow.status}`,
+    ].join('\n');
+    try {
+      await navigator.clipboard.writeText(text);
+      showToast('Request summary copied to clipboard.', 'success');
+    } catch {
+      showToast('Unable to copy request summary.', 'error');
+    }
+  };
   const columns = useMemo(
     () => [
-      { key: 'memberId', label: 'CIFK Number', className: 'w-36', cellClassName: 'whitespace-nowrap w-36', render: (row) => row.cifNumber || row.memberId || '—' },
+      { key: 'memberId', label: 'CIFK Number', className: 'w-36', cellClassName: 'whitespace-nowrap w-36', render: (row) => row.cifNumber || row.memberId || 'â€”' },
       {
         key: 'fullName',
         label: 'Member',
@@ -912,12 +945,11 @@ export default function Members() {
   
   const requestColumns = useMemo(
     () => [
-      { key: 'cifNumber', label: 'CIFK Number', sortable: false, render: (row) => row.cifNumber || row.memberId || '—' },
-      { key: 'fullName', label: 'Member Name' },
-      { key: 'requestType', label: 'Request Type', render: (row) => String(row?.requestType || row?.metadata?.claimantApplication?.requestType || (String(row?.approvalQueue || row?.metadata?.approvalQueue || row?.metadata?.claimantApplication?.approvalQueue || '').toLowerCase() === 'claimant' || String(row?.requestKind || row?.metadata?.requestKind || row?.metadata?.claimantApplication?.requestKind || '').toLowerCase() === 'claimant' ? 'Claimant Application' : 'Member Request')) },
-      { key: 'requestedByName', label: 'Requested By' },
-      { key: 'benefitCategory', label: 'Category', render: (row) => normalizeBenefitCategory(row.benefitCategory) },
-      { key: 'submittedAt', label: 'Date Submitted', render: (row) => formatDate(row.submittedAt) },
+      { key: 'requestId', label: 'Request ID', sortable: false, render: (row) => row.requestId || row.request_id || row.id || '—' },
+      { key: 'fileName', label: 'Member / File Name', render: (row) => row.fileName || row.file_name || row.metadata?.fileName || '—' },
+      { key: 'submittedByName', label: 'Submitted By', render: (row) => row.submittedByName || row.requestedByName || row.requestedBy || '—' },
+      { key: 'totalMembers', label: 'Total Members', render: (row) => String(row.totalMembers ?? row.total_members ?? previewMembers(row).length ?? 0) },
+      { key: 'submittedAt', label: 'Date Submitted', render: (row) => row.submittedAt ? formatDate(row.submittedAt) : '—' },
       { key: 'requestStatus', label: 'Status', render: (row) => <Badge>{row.requestStatus || 'Pending'}</Badge> },
     ],
     [],
@@ -1053,9 +1085,21 @@ export default function Members() {
   };
 
   const validate = () => {
-    const nextErrors = buildErrorMap([
-      { field: 'memberId', valid: required(currentForm.memberId), message: 'CIFK number is required.' },
-      { field: 'memberId', valid: uniqueBy(scopedData.members, 'cifNumber', currentForm.memberId, editing?.id), message: 'CIFK number already exists.' },
+    const existingCifConflict = scopedData.members.some((member) => String(member.cifNumber || member.memberId || '').trim() === String(currentForm.cifNumber || '').trim())
+      || (Array.isArray(scopedData.requests) && scopedData.requests.some((request) =>
+        ['pending', 'returned', 'approved', 'rejected'].includes(String(request.requestStatus || '').toLowerCase())
+        && String(request.cifNumber || request.memberId || '').trim() === String(currentForm.cifNumber || '').trim()));
+    const requestMemberFields = isRequestMemberPage ? [
+      { field: 'memberId', valid: required(currentForm.cifNumber), message: 'CIFK number is required.' },
+      { field: 'memberId', valid: !existingCifConflict, message: 'CIFK number already exists.' },
+      { field: 'fullName', valid: required(currentForm.fullName), message: 'Member name is required.' },
+      { field: 'barangay', valid: required(currentForm.barangay), message: 'Barangay / Municipality is required.' },
+      { field: 'shareCapital', valid: Number.isFinite(Number(currentForm.shareCapital ?? 0)), message: 'Contribution is required.' },
+      { field: 'contactNumber', valid: isPhone(currentForm.contactNumber), message: 'Use a valid PH mobile number.' },
+      { field: 'lastContributionDate', valid: required(currentForm.lastContributionDate), message: 'Last contribution date is required.' },
+    ] : [
+      { field: 'memberId', valid: required(currentForm.cifNumber), message: 'CIFK number is required.' },
+      { field: 'memberId', valid: uniqueBy(scopedData.members, 'cifNumber', currentForm.cifNumber, editing?.id), message: 'CIFK number already exists.' },
       { field: 'firstName', valid: required(currentForm.firstName), message: 'First name is required.' },
       { field: 'lastName', valid: required(currentForm.lastName), message: 'Last name is required.' },
       { field: 'address', valid: required(currentForm.address), message: 'Present address is required.' },
@@ -1063,7 +1107,8 @@ export default function Members() {
       { field: 'birthdate', valid: required(currentForm.birthdate), message: 'Date of birth is required.' },
       { field: 'membershipDate', valid: required(currentForm.membershipDate), message: 'Membership date is required.' },
       { field: 'lastShareCapitalDepositDate', valid: required(currentForm.lastShareCapitalDepositDate), message: 'Last capital deposit date is required.' },
-    ]);
+    ];
+    const nextErrors = buildErrorMap(requestMemberFields);
     setErrors(nextErrors);
     return !Object.keys(nextErrors).length;
   };
@@ -1076,11 +1121,10 @@ export default function Members() {
 
     setIsSaving(true);
     try {
-      const generatedCifNumber = nextCifNumber(scopedData.members);
       const nextMember = buildMemberPayload(currentForm, {
         status: isApprover ? computedStatus : 'Pending',
         branch: currentForm.branch || currentUser?.branch || 'Main Office',
-        cifNumber: generatedCifNumber,
+        cifNumber: currentForm.cifNumber || '',
         existingMember: editing,
       });
 
@@ -1105,7 +1149,7 @@ export default function Members() {
         data.updateMember(editing.id, nextMember, currentUser.username);
         showToast('Member profile updated.');
       } else {
-        data.createMember(nextMember, currentUser.username);
+        await data.createMember(nextMember, currentUser.username);
         showToast('Member profile created.');
       }
       setModalOpen(false);
@@ -1193,7 +1237,7 @@ export default function Members() {
     const duplicates = previewRows.filter((item) => item.isDuplicate).length;
     setImportRows(previewRows);
     setImportSummary({ total, valid, invalid, duplicates });
-    setImportModalOpen(true);
+    return previewRows;
   };
 
   const handleImportSelection = async (event) => {
@@ -1201,8 +1245,22 @@ export default function Members() {
     if (!file) return;
     try {
       setIsImporting(true);
+      setImportFileName(file.name || 'imported-members.csv');
       const rows = await parseFile(file);
-      await buildImportPreview(rows);
+      const previewRows = await buildImportPreview(rows);
+      if (isStaff) {
+        setImportRows(previewRows);
+        await importValidMembers(previewRows, file.name || 'imported-members.csv');
+      } else {
+        setImportRows(previewRows);
+        setImportSummary({
+          total: previewRows.length,
+          valid: previewRows.filter((row) => row.isValid).length,
+          invalid: previewRows.filter((row) => row.statusTone === 'invalid').length,
+          duplicates: previewRows.filter((row) => row.isDuplicate).length,
+        });
+        setImportModalOpen(true);
+      }
     } catch (error) {
       console.error(error);
       showToast(error.message || 'Unable to read import file.', 'error');
@@ -1212,8 +1270,8 @@ export default function Members() {
     }
   };
 
-  const importValidMembers = async () => {
-    const validRows = importRows.filter((row) => row.isValid);
+  const importValidMembers = async (rows = importRows, fileName = importFileName) => {
+    const validRows = rows.filter((row) => row.isValid);
     if (!validRows.length) {
       showToast('No valid rows to import.', 'error');
       return;
@@ -1233,18 +1291,19 @@ export default function Members() {
     || member.lastContributionDate
     || member.membershipDate
     || todayIso();
-      return {
-        ...member,
-        cifNumber: row.cifNumber || member.cifNumber,
-        memberId: row.cifNumber || member.memberId,
-        fullName: row.member || member.fullName,
-        full_name: row.member || member.fullName,
-        barangay: row.barangay || member.barangay,
-        shareCapital: normalizeImportedNumber(row.savings),
-        contactNumber: row.contact || member.contactNumber,
-        lastContributionDate: contributionDate || member.lastContributionDate || member.membershipDate || todayIso(),
-        membershipDate: contributionDate || member.membershipDate || member.lastContributionDate || todayIso(),
-        status: row.normalized.status,
+    return {
+      ...member,
+      cifNumber: row.cifNumber || member.cifNumber,
+      memberId: row.cifNumber || member.memberId,
+      fullName: row.member || member.fullName,
+      full_name: row.member || member.fullName,
+      barangay: row.barangay || member.barangay,
+      shareCapital: normalizeImportedNumber(row.savings),
+      contactNumber: row.contact || row.normalized?.contact || member.contactNumber,
+      contact: row.contact || row.normalized?.contact || member.contactNumber,
+      lastContributionDate: contributionDate || member.lastContributionDate || member.membershipDate || todayIso(),
+      membershipDate: contributionDate || member.membershipDate || member.lastContributionDate || todayIso(),
+      status: row.normalized.status,
         metadata: {
           ...(member.metadata || {}),
           importedFrom: 'csv_excel',
@@ -1257,17 +1316,48 @@ export default function Members() {
       };
     });
 
+    setImportFileName((current) => current || 'import-file');
     setIsImporting(true);
     try {
-      if (typeof data.createMembersBatch === 'function') {
-        await data.createMembersBatch(importedMembers, currentUser?.username || 'System');
+      if (isStaff) {
+        await data.createRequest({
+          requestType: 'Imported Member Batch',
+          requestKind: 'batch-import',
+          approvalQueue: 'member-import',
+          requestStatus: 'Pending',
+          submittedAt: new Date().toISOString(),
+          submittedBy: currentUser?.username || 'staff',
+          submittedByName: currentUser?.fullName || currentUser?.username || 'Staff',
+          fileName: fileName || 'imported-members.csv',
+          totalMembers: importedMembers.length,
+          importedMembers,
+          metadata: {
+            importedFrom: 'csv_excel',
+            fileName: fileName || 'imported-members.csv',
+            importSummary: { total: rows.length, valid: rows.filter((row) => row.isValid).length, invalid: rows.filter((row) => row.statusTone === 'invalid').length, duplicates: rows.filter((row) => row.isDuplicate).length },
+            importBatch: {
+              fileName: fileName || 'imported-members.csv',
+              totalMembers: importedMembers.length,
+              members: importedMembers,
+            },
+          },
+        }, currentUser?.username || 'staff');
+        showToast(`${importedMembers.length} imported member(s) submitted for approval.`, 'success');
       } else {
-        await Promise.all(importedMembers.map((member) => data.createMember(member, currentUser?.username || 'System')));
+        const creator = typeof data.createMember === 'function' ? data.createMember : null;
+        if (!creator) {
+          throw new Error('Member import is unavailable right now.');
+        }
+
+        await Promise.all(
+          importedMembers.map((member) => creator(member, currentUser?.username || 'System')),
+        );
+        showToast(`${importedMembers.length} members imported successfully. ${importRows.length - importedMembers.length} row(s) skipped.`, 'success');
       }
-      showToast(`${importedMembers.length} members imported successfully. ${importRows.length - importedMembers.length} row(s) skipped.`, 'success');
       setImportModalOpen(false);
       setImportRows([]);
       setImportSummary({ total: 0, valid: 0, invalid: 0, duplicates: 0 });
+      setImportFileName('');
     } catch (error) {
       console.error(error);
       showToast(error.message || 'Unable to import members.', 'error');
@@ -1306,6 +1396,31 @@ export default function Members() {
   };
 
   const openRequest = (request) => {
+    if (isBatchImportRequest(request)) {
+      const members = previewMembers(request);
+      const previewRows = members.map((member, index) => ({
+        rowNumber: index + 1,
+        cifNumber: member.cifNumber || member.memberId || '',
+        member: member.fullName || member.member || member.full_name || 'Unnamed member',
+        barangay: member.barangay || '',
+        savings: String(member.shareCapital ?? member.contribution ?? 0),
+        contact: member.contactNumber || '',
+        lastContributionDate: member.lastContributionDate || member.membershipDate || member.lastShareCapitalDepositDate || '',
+        normalized: { status: member.status || 'Active' },
+        validation: member.validation || 'Valid',
+        statusTone: member.statusTone || 'valid',
+        isValid: true,
+        isDuplicate: false,
+      }));
+      setRequestTarget(request);
+      setImportRows(previewRows);
+      setImportSummary({ total: previewRows.length, valid: previewRows.length, invalid: 0, duplicates: 0 });
+      setImportFileName(request.fileName || request.metadata?.fileName || 'imported-members.csv');
+      setImportPreviewOnly(true);
+      setImportModalOpen(true);
+      return;
+    }
+
     setRequestTarget(request);
     setEditing(null);
     setReviewDraft(memberForForm(request, todayIso()));
@@ -1315,6 +1430,10 @@ export default function Members() {
     setReviewReason(request.returnReason || request.rejectionReason || request.approvalReason || '');
     setModalOpen(true);
   };
+
+  const isBatchImportRequest = (request) => String(request?.requestType || '').toLowerCase() === 'imported member batch'
+    || String(request?.requestKind || '').toLowerCase() === 'batch-import'
+    || String(request?.approvalQueue || '').toLowerCase() === 'member-import';
 
   const isClaimantRequest = (request) => {
     const requestType = String(request?.requestType || request?.metadata?.claimantApplication?.requestType || '').toLowerCase();
@@ -1327,15 +1446,15 @@ export default function Members() {
   };
   const requestRows = useMemo(
     () => (data.requests || []).filter((request) =>
-      (request.requestStatus || '').toLowerCase() !== 'approved'
+      ['pending', 'returned'].includes(String(request.requestStatus || '').toLowerCase())
       && String(request.requestType || request?.metadata?.claimantApplication?.requestType || 'member request').toLowerCase() === 'member request'
     ),
     [data.requests],
   );
   const memberRequestRows = useMemo(
     () => (data.requests || []).filter((request) =>
-      (request.requestStatus || '').toLowerCase() !== 'approved'
-      && !isClaimantRequest(request)
+      ['pending', 'returned'].includes(String(request.requestStatus || '').toLowerCase())
+      && (!isClaimantRequest(request) || String(request.requestType || '').toLowerCase() === 'imported member batch')
     ),
     [data.requests],
   );
@@ -1347,106 +1466,71 @@ export default function Members() {
     <div className="space-y-5">
       {true ? (
         <>
-      <Section title="I. Membership Application">
-        <div className="grid gap-4 md:grid-cols-4">
+      <Section title="I. Membership Summary">
+        <div className="grid gap-4 md:grid-cols-12">
           <FormField
+            className="md:col-span-2"
             error={errors.memberId}
             inputClassName="bg-slate-50 dark:bg-slate-900"
             label="CIFK Number"
-            readOnly
-            value={displayedCifNumber}
+            value={currentForm.cifNumber}
+            onChange={(event) => (requestTarget
+              ? setReturnedDraft((current) => ({ ...current, cifNumber: event.target.value }))
+              : setForm((current) => ({ ...current, cifNumber: event.target.value })))}
           />
-          <FormField as="select" disabled={isRequestApprovalPage} label="Benefit Category" options={MEMBER_BENEFIT_CATEGORIES} value={normalizeBenefitCategory(currentForm.benefitCategory)} onChange={(event) => (requestTarget ? setReturnedDraft((current) => ({ ...current, benefitCategory: event.target.value })) : setForm((current) => ({ ...current, benefitCategory: event.target.value })))} />
-          <FormField as="select" disabled={isRequestApprovalPage} label="Application Status" options={APPLICATION_STATUS_OPTIONS} value={currentForm.applicationStatus} onChange={(event) => (requestTarget ? setReturnedDraft((current) => ({ ...current, applicationStatus: event.target.value })) : setForm((current) => ({ ...current, applicationStatus: event.target.value })))} />
-          <FormField error={errors.membershipDate} disabled={isRequestApprovalPage} label="Last Contribution Date" type="date" value={currentForm.membershipDate} onChange={(event) => (requestTarget ? setReturnedDraft((current) => ({ ...current, membershipDate: event.target.value })) : setForm((current) => ({ ...current, membershipDate: event.target.value })))} />
-        </div>
-      </Section>
-
-      <Section title="II. Applicant Information">
-        <div className="grid gap-4 md:grid-cols-8">
-          <FormField className="md:col-span-2" disabled={isRequestApprovalPage} error={errors.firstName} label="First Name" value={currentForm.firstName} onChange={(event) => (requestTarget ? setReturnedDraft((current) => ({ ...current, firstName: event.target.value })) : setForm((current) => ({ ...current, firstName: event.target.value })))} />
-          <FormField className="md:col-span-2" disabled={isRequestApprovalPage} error={errors.lastName} label="Last Name" value={currentForm.lastName} onChange={(event) => (requestTarget ? setReturnedDraft((current) => ({ ...current, lastName: event.target.value })) : setForm((current) => ({ ...current, lastName: event.target.value })))} />
-          <FormField className="md:col-span-2" disabled={isRequestApprovalPage} label="Middle Name" value={currentForm.middleName} onChange={(event) => (requestTarget ? setReturnedDraft((current) => ({ ...current, middleName: event.target.value })) : setForm((current) => ({ ...current, middleName: event.target.value })))} />
-          <FormField as="select" className="md:col-span-2" disabled={isRequestApprovalPage} label="Suffix Name" options={SUFFIX_NAME_OPTIONS} value={currentForm.suffixName} onChange={(event) => (requestTarget ? setReturnedDraft((current) => ({ ...current, suffixName: event.target.value })) : setForm((current) => ({ ...current, suffixName: event.target.value })))} />
-          <FormField className="md:col-span-2" error={errors.birthdate} disabled={isRequestApprovalPage} label="Date of Birth" type="date" value={currentForm.birthdate} onChange={(event) => updateBirthdate(event.target.value)} />
-          <FormField className="md:col-span-2" inputClassName="bg-slate-50 dark:bg-slate-900" label="Age" disabled type="number" value={currentForm.ageYears} />
-          <FormField as="select" className="md:col-span-2" disabled={isRequestApprovalPage} label="Sex" options={['Male', 'Female']} value={currentForm.gender} onChange={(event) => (requestTarget ? setReturnedDraft((current) => ({ ...current, gender: event.target.value })) : setForm((current) => ({ ...current, gender: event.target.value })))} />
-          <FormField as="select" className="md:col-span-2" disabled={isRequestApprovalPage} label="Civil Status" options={CIVIL_STATUS_OPTIONS} value={currentForm.civilStatus} onChange={(event) => (requestTarget ? setReturnedDraft((current) => ({ ...current, civilStatus: event.target.value })) : setForm((current) => ({ ...current, civilStatus: event.target.value })))} />
-          <FormField className="md:col-span-2" error={errors.contactNumber} disabled={isRequestApprovalPage} label="Contact Number" value={currentForm.contactNumber} onChange={(event) => (requestTarget ? setReturnedDraft((current) => ({ ...current, contactNumber: event.target.value })) : setForm((current) => ({ ...current, contactNumber: event.target.value })))} />
+          <FormField
+            className="md:col-span-2"
+            disabled={isRequestApprovalPage}
+            label="Member"
+            value={currentForm.fullName}
+            onChange={(event) => (requestTarget
+              ? setReturnedDraft((current) => ({ ...current, fullName: event.target.value }))
+              : setForm((current) => ({ ...current, fullName: event.target.value })))}
+          />
           <SearchableTextField
-            className="md:col-span-4"
+            className="md:col-span-3"
             emptyMessage="No Antique address found."
-            label="Present Address"
-            options={ANTIQUE_BARANGAYS}
-            placeholder="Search address in Antique"
-            value={currentForm.address}
-            onChange={(value) => (requestTarget ? setReturnedDraft((current) => ({ ...current, address: value })) : setForm((current) => ({ ...current, address: value })))}
+            label="Barangay / Municipality"
+            options={BARANGAYS}
+            placeholder="Select barangay / municipality"
+            value={currentForm.barangay}
+            onChange={(barangay) => (requestTarget
+              ? setReturnedDraft((current) => ({ ...current, barangay }))
+              : setForm((current) => ({ ...current, barangay })))}
           />
-          <BarangaySearchField value={currentForm.barangay} options={BARANGAYS} onChange={(barangay) => (requestTarget ? setReturnedDraft((current) => ({ ...current, barangay })) : setForm((current) => ({ ...current, barangay })))} />
-          <FormField className="md:col-span-2" disabled={isRequestApprovalPage} label="Occupation" value={currentForm.occupation} onChange={(event) => (requestTarget ? setReturnedDraft((current) => ({ ...current, occupation: event.target.value })) : setForm((current) => ({ ...current, occupation: event.target.value })))} />
-          <FormField className="md:col-span-2" disabled={isRequestApprovalPage} label="Employer" value={currentForm.employer} onChange={(event) => (requestTarget ? setReturnedDraft((current) => ({ ...current, employer: event.target.value })) : setForm((current) => ({ ...current, employer: event.target.value })))} />
-          {currentForm.religion === 'Others' || currentForm.religionOther ? (
-            <FormField className="md:col-span-2" disabled={isRequestApprovalPage} label="Religion" placeholder="Type religion" value={currentForm.religionOther || ''} onChange={(event) => updateMemberCustomReligion(event.target.value)} />
-          ) : (
-            <FormField as="select" className="md:col-span-2" disabled={isRequestApprovalPage} label="Religion" options={RELIGION_OPTIONS} value={currentForm.religion || RELIGION_OPTIONS[0]} onChange={(event) => updateMemberReligion(event.target.value)} />
-          )}
-          <FormField className="md:col-span-2" disabled={isRequestApprovalPage} label="No. of Dependents" min="0" step="1" type="number" value={currentForm.dependents} onChange={(event) => (requestTarget ? setReturnedDraft((current) => ({ ...current, dependents: Number(event.target.value) })) : setForm((current) => ({ ...current, dependents: Number(event.target.value) })))} />
-          <FormField className="md:col-span-4" disabled={isRequestApprovalPage} label="Office Address" value={currentForm.officeAddress} onChange={(event) => (requestTarget ? setReturnedDraft((current) => ({ ...current, officeAddress: event.target.value })) : setForm((current) => ({ ...current, officeAddress: event.target.value })))} />
-          <FormField className="md:col-span-2" disabled={isRequestApprovalPage} inputClassName="appearance-textfield" label="Contribution" inputMode="decimal" type="text" value={currentForm.shareCapital ?? 0} onChange={(event) => (requestTarget ? setReturnedDraft((current) => ({ ...current, shareCapital: event.target.value === '' ? 0 : Number(event.target.value) })) : setForm((current) => ({ ...current, shareCapital: event.target.value === '' ? 0 : Number(event.target.value) })))} />
-        </div>
-      </Section>
-
-      <Section title="III. Beneficiary Information">
-        <div className="space-y-4">
-          {normalizeBeneficiaries(currentForm.beneficiaries).map((beneficiary, index) => (
-            <div key={index} className="grid gap-3 rounded-lg bg-slate-50 p-3 dark:bg-slate-900 md:grid-cols-2 xl:grid-cols-4">
-              <FormField disabled={isRequestApprovalPage} label="First Name" value={beneficiary.firstName} onChange={(event) => updateBeneficiary(index, 'firstName', event.target.value)} />
-              <FormField disabled={isRequestApprovalPage} label="Last Name" value={beneficiary.lastName} onChange={(event) => updateBeneficiary(index, 'lastName', event.target.value)} />
-              <FormField disabled={isRequestApprovalPage} label="Middle Name" value={beneficiary.middleName} onChange={(event) => updateBeneficiary(index, 'middleName', event.target.value)} />
-              <FormField as="select" disabled={isRequestApprovalPage} label="Suffix Name" options={SUFFIX_NAME_OPTIONS} value={beneficiary.suffixName} onChange={(event) => updateBeneficiary(index, 'suffixName', event.target.value)} />
-              <FormField disabled={isRequestApprovalPage} label="Date of Birth" type="date" value={beneficiary.birthdate} onChange={(event) => updateBeneficiaryBirthdate(index, event.target.value)} />
-              <FormField label="Age" readOnly value={beneficiary.ageYears !== '' ? String(beneficiary.ageYears || 0) : ''} />
-              <FormField as="select" disabled={isRequestApprovalPage} label="Gender" options={['Male', 'Female']} value={beneficiary.gender} onChange={(event) => updateBeneficiary(index, 'gender', event.target.value)} />
-              <FormField as="select" disabled={isRequestApprovalPage} label="Civil Status" options={CIVIL_STATUS_OPTIONS} value={beneficiary.civilStatus} onChange={(event) => updateBeneficiary(index, 'civilStatus', event.target.value)} />
-              {beneficiary.religion === 'Others' || beneficiary.religionOther ? (
-                <FormField disabled={isRequestApprovalPage} label="Religion" placeholder="Type religion" value={beneficiary.religionOther || ''} onChange={(event) => updateBeneficiaryCustomReligion(index, event.target.value)} />
-              ) : (
-                <FormField as="select" disabled={isRequestApprovalPage} label="Religion" options={RELIGION_OPTIONS} value={beneficiary.religion || RELIGION_OPTIONS[0]} onChange={(event) => updateBeneficiaryReligion(index, event.target.value)} />
-              )}
-              {beneficiary.nationality === 'Others (specify)' || beneficiary.nationalityOther ? (
-                <FormField disabled={isRequestApprovalPage} label="Nationality" placeholder="Type nationality" value={beneficiary.nationalityOther || ''} onChange={(event) => updateBeneficiaryCustomNationality(index, event.target.value)} />
-              ) : (
-                <FormField as="select" disabled={isRequestApprovalPage} label="Nationality" options={NATIONALITY_OPTIONS} value={beneficiary.nationality || NATIONALITY_OPTIONS[0]} onChange={(event) => updateBeneficiaryNationality(index, event.target.value)} />
-              )}
-              <FormField disabled={isRequestApprovalPage} label="Contact Number" value={beneficiary.contactNumber} onChange={(event) => updateBeneficiary(index, 'contactNumber', event.target.value)} />
-              <div className="flex flex-col gap-2 md:col-span-2 xl:col-span-2">
-                <FormField className="md:col-span-2 xl:col-span-2" disabled={isRequestApprovalPage} label="Present Address" value={beneficiary.address} onChange={(event) => updateBeneficiary(index, 'address', event.target.value)} />
-                <div className="flex flex-wrap gap-2">
-                  {!isRequestApprovalPage && index === normalizeBeneficiaries(currentForm.beneficiaries).length - 1 ? (
-                    <Button className="w-fit" type="button" variant="secondary" onClick={addBeneficiary}>
-                      Add Beneficiary
-                    </Button>
-                  ) : null}
-                  {!isRequestApprovalPage ? (
-                    <Button
-                      className="w-fit text-rose-600 hover:text-rose-700"
-                      type="button"
-                      variant="secondary"
-                      onMouseDown={(event) => event.preventDefault()}
-                      onClick={() => removeBeneficiary(index)}
-                    >
-                      Remove Beneficiary
-                    </Button>
-                  ) : null}
-                </div>
-              </div>
-              {beneficiary.relationship === 'Others' || beneficiary.relationshipOther ? (
-                <FormField disabled={isRequestApprovalPage} label="Relationship" placeholder="Type relationship" value={beneficiary.relationshipOther || ''} onChange={(event) => updateBeneficiaryCustomRelationship(index, event.target.value)} />
-              ) : (
-                <FormField as="select" disabled={isRequestApprovalPage} label="Relationship" options={RELATIONSHIP_OPTIONS} value={beneficiary.relationship} onChange={(event) => updateBeneficiaryRelationship(index, event.target.value)} />
-              )}
-            </div>
-          ))}
+          <FormField
+            className="md:col-span-1"
+            inputClassName="appearance-textfield"
+            disabled={isRequestApprovalPage}
+            inputMode="decimal"
+            label="Contribution"
+            type="text"
+            value={currentForm.shareCapital ?? 0}
+            onChange={(event) => (requestTarget
+              ? setReturnedDraft((current) => ({ ...current, shareCapital: event.target.value === '' ? 0 : Number(event.target.value) }))
+              : setForm((current) => ({ ...current, shareCapital: event.target.value === '' ? 0 : Number(event.target.value) })))}
+          />
+          <FormField
+            className="md:col-span-2"
+            error={errors.contactNumber}
+            disabled={isRequestApprovalPage}
+            label="Contact"
+            value={currentForm.contactNumber}
+            onChange={(event) => (requestTarget
+              ? setReturnedDraft((current) => ({ ...current, contactNumber: event.target.value }))
+              : setForm((current) => ({ ...current, contactNumber: event.target.value })))}
+          />
+          <FormField
+            className="md:col-span-2"
+            error={errors.membershipDate}
+            disabled={isRequestApprovalPage}
+            label="Last Contribution Date"
+            type="date"
+            value={currentForm.lastContributionDate}
+            onChange={(event) => (requestTarget
+              ? setReturnedDraft((current) => ({ ...current, lastContributionDate: event.target.value }))
+              : setForm((current) => ({ ...current, lastContributionDate: event.target.value })))}
+          />
         </div>
       </Section>
         </>
@@ -1484,7 +1568,7 @@ export default function Members() {
                     <div>
                       <p className="font-semibold text-slate-900">{request.fullName}</p>
                       <p className="text-xs text-slate-500">
-                        {request.cifNumber || request.memberId || '—'} · Returned: {formatDate(request.returnedAt)} · Reason: {request.returnReason || 'Please review missing requirements.'}
+                        {request.cifNumber || request.memberId || 'â€”'} Â· Returned: {formatDate(request.returnedAt)} Â· Reason: {request.returnReason || 'Please review missing requirements.'}
                       </p>
                     </div>
                     <Button
@@ -1521,7 +1605,7 @@ export default function Members() {
                 actions={memberRequestRows.length ? (row) => (
                   <div className="flex justify-end gap-2">
                     <Button className="px-3" icon={FiEdit2} variant="secondary" onClick={() => openRequest(row)}>
-                      Review
+                      Preview
                     </Button>
                   </div>
                 ) : null}
@@ -1540,7 +1624,7 @@ export default function Members() {
                       Request Member
                     </Button>
                   ) : null}
-                  {!isManager ? (
+                  {!isManager && !isAdmin ? (
                     <>
                       <input
                         ref={csvInputRef}
@@ -1566,18 +1650,7 @@ export default function Members() {
                   ) : null}
                 </div>
               )}
-              actions={(scopedData.members).length ? (row) => (
-                <div className="flex justify-end gap-2 whitespace-nowrap">
-                  <Button className="px-3 py-2 text-sm" icon={FiEdit2} variant="secondary" onClick={() => openForm(row)}>
-                    Edit
-                  </Button>
-                  {(isAdmin || isManager) && !isRequestMemberPage ? (
-                    <Button className="px-3 py-2 text-sm" icon={FiTrash2} variant="danger" onClick={() => setDeleteTarget(row)}>
-                      Delete
-                    </Button>
-                  ) : null}
-                </div>
-              ) : null}
+              actions={null}
               columns={columns}
               data={scopedData.members}
               description={isAdmin ? 'Admin: all branches with edit and delete access.' : 'Manage member profiles.'}
@@ -1593,12 +1666,14 @@ export default function Members() {
 
           <Modal
             open={importModalOpen}
-            title="Import Members Preview"
+            title={importPreviewOnly ? 'Batch Preview' : 'Import Members Preview'}
             maxWidth="max-w-7xl"
             onClose={() => {
               setImportModalOpen(false);
               setImportRows([]);
               setImportSummary({ total: 0, valid: 0, invalid: 0, duplicates: 0 });
+              setImportFileName('');
+              setImportPreviewOnly(false);
             }}
             footer={(
               <>
@@ -1606,12 +1681,38 @@ export default function Members() {
                   setImportModalOpen(false);
                   setImportRows([]);
                   setImportSummary({ total: 0, valid: 0, invalid: 0, duplicates: 0 });
+                  setImportFileName('');
+                  setImportPreviewOnly(false);
                 }}>
                   Cancel
                 </Button>
-                <Button onClick={importValidMembers} disabled={!importRows.some((row) => row.isValid) || isImporting}>
-                  Import Valid Members
-                </Button>
+                {importPreviewOnly ? (
+                  <Button
+                    onClick={async () => {
+                      if (!requestTarget) return;
+                      await data.approveRequest(requestTarget.requestId || requestTarget.id, {
+                        approvalReason: `Approved imported batch ${requestTarget.fileName || importFileName || 'request'}.`,
+                      }, currentUser.username);
+                      setImportModalOpen(false);
+                      setImportRows([]);
+                      setImportSummary({ total: 0, valid: 0, invalid: 0, duplicates: 0 });
+                      setImportFileName('');
+                      setImportPreviewOnly(false);
+                      setRequestTarget(null);
+                    }}
+                    disabled={!importRows.some((row) => row.isValid) || isImporting}
+                  >
+                    Import Member
+                  </Button>
+                ) : isStaff ? (
+                  <Button onClick={importValidMembers} disabled={!importRows.some((row) => row.isValid) || isImporting}>
+                    Submit Request
+                  </Button>
+                ) : (
+                  <Button onClick={importValidMembers} disabled={!importRows.some((row) => row.isValid) || isImporting}>
+                    Import Valid Members
+                  </Button>
+                )}
               </>
             )}
           >
@@ -1645,8 +1746,6 @@ export default function Members() {
                       <th className="px-6 py-5">Contribution</th>
                       <th className="px-6 py-5">Contact</th>
                       <th className="px-6 py-5">Last Contribution Date</th>
-                      <th className="px-6 py-5">Status</th>
-                      <th className="px-6 py-5">Validation</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-[#E2E8F0]">
@@ -1657,18 +1756,10 @@ export default function Members() {
                       >
                         <td className="px-6 py-5 whitespace-nowrap">{row.cifNumber || 'Will generate'}</td>
                         <td className="px-6 py-5 whitespace-nowrap font-semibold">{row.member || 'Missing member name'}</td>
-                        <td className="px-6 py-5">{row.barangay || '—'}</td>
-                        <td className="px-6 py-5 whitespace-nowrap">{row.savings ? Number(String(row.savings).replace(/,/g, '')).toLocaleString('en-PH') : '0'}</td>
-                        <td className="px-6 py-5 whitespace-nowrap">{row.lastContributionDate ? formatDate(row.lastContributionDate) : '—'}</td>
-                        <td className="px-6 py-5 whitespace-nowrap">{row.normalized?.status || 'Active'}</td>
-                        <td className="px-6 py-5">
-                          <div className="flex flex-col gap-1">
-                            <Badge tone={row.statusTone === 'valid' ? 'success' : row.statusTone === 'warning' ? 'warning' : 'danger'}>
-                              {row.statusTone === 'valid' ? 'Valid' : row.statusTone === 'warning' ? 'Warning' : 'Invalid'}
-                            </Badge>
-                            <p className="text-xs text-slate-500">{row.validation}</p>
-                          </div>
-                        </td>
+                        <td className="px-6 py-5">{row.barangay || 'â€”'}</td>
+                        <td className="px-6 py-5 whitespace-nowrap">₱{row.savings ? Number(String(row.savings).replace(/,/g, '')).toLocaleString('en-PH') : '0'}</td>
+                        <td className="px-6 py-5 whitespace-nowrap">{row.contact || row.contactNumber || row.normalized?.contact || 'â€”'}</td>
+                        <td className="px-6 py-5 whitespace-nowrap">{row.lastContributionDate ? formatDate(row.lastContributionDate) : 'â€”'}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -1679,7 +1770,7 @@ export default function Members() {
 
           <Modal
             open={modalOpen}
-            title={isRequestApprovalPage ? 'Request Approval' : isRequestMemberPage ? 'Request Member' : 'Members'}
+            title={isRequestApprovalPage ? (requestTarget && isBatchImportRequest(requestTarget) ? 'Batch Preview' : 'Request Preview') : isRequestMemberPage ? 'Request Member' : 'Members'}
             maxWidth="max-w-6xl"
             onClose={() => {
               setModalOpen(false);
@@ -1688,30 +1779,31 @@ export default function Members() {
             footer={
               isRequestApprovalPage ? (
                 <>
-                  <Button variant="secondary" onClick={() => setModalOpen(false)} disabled={isSaving}>
-                    Close
-                  </Button>
-                  <Button
-                    variant="secondary"
-                    onClick={() => {
-                      const reason = requireReviewReason();
-                      if (!reason) return;
-                      reviewRequest(data.returnRequest, 'Member request returned for correction.', { returnReason: reason });
-                    }}
-                    disabled={isSaving}
-                  >
-                    Return for Correction
-                  </Button>
-                  <Button
-                    onClick={() => {
-                      const reason = requireReviewReason();
-                      if (!reason) return;
-                      reviewRequest(data.approveRequest, 'Member request approved.', { approvalReason: reason });
-                    }}
-                    disabled={isSaving}
-                  >
-                    Approve
-                  </Button>
+                  {requestTarget && isBatchImportRequest(requestTarget) ? null : (
+                    <>
+                      <Button
+                        variant="secondary"
+                        onClick={() => {
+                          const reason = requireReviewReason();
+                          if (!reason) return;
+                          reviewRequest(data.returnRequest, 'Member request returned for correction.', { returnReason: reason });
+                        }}
+                        disabled={isSaving}
+                      >
+                        Return for Correction
+                      </Button>
+                      <Button
+                        onClick={() => {
+                          const reason = requireReviewReason();
+                          if (!reason) return;
+                          reviewRequest(data.approveRequest, 'Member request approved.', { approvalReason: reason });
+                        }}
+                        disabled={isSaving}
+                      >
+                        Approve
+                      </Button>
+                    </>
+                  )}
                 </>
               ) : (
                 <>
@@ -1725,16 +1817,58 @@ export default function Members() {
               )
             }
           >
-            {formContent}
-            {isRequestApprovalPage ? (
-              <FormField
-                as="textarea"
-                label="Reason"
-                placeholder="Type the reason for approving or returning this request..."
-                value={reviewReason}
-                onChange={(event) => setReviewReason(event.target.value)}
-              />
-            ) : null}
+            {isRequestApprovalPage && requestTarget && isBatchImportRequest(requestTarget) ? (
+              <div className="space-y-4">
+                <div className="overflow-x-auto rounded-2xl">
+                  <table className="min-w-full text-left">
+                    <thead className="border-b border-slate-200 bg-white text-sm font-semibold text-slate-900">
+                      <tr>
+                        <th className="px-4 py-4 whitespace-nowrap">Request ID</th>
+                        <th className="px-4 py-4 whitespace-nowrap">Member / File Name</th>
+                        <th className="px-4 py-4 whitespace-nowrap">Submitted By</th>
+                        <th className="px-4 py-4 whitespace-nowrap">Total Members</th>
+                        <th className="px-4 py-4 whitespace-nowrap">Date Submitted</th>
+                        <th className="px-4 py-4 whitespace-nowrap">Status</th>
+                        <th className="px-4 py-4 whitespace-nowrap">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="text-sm text-slate-900">
+                      <tr className="border-b border-slate-200 last:border-b-0">
+                        <td className="px-4 py-4 whitespace-nowrap">{requestSummaryRow?.requestId || '—'}</td>
+                        <td className="px-4 py-4 max-w-[220px] whitespace-normal break-words">{requestSummaryRow?.fileName || '—'}</td>
+                        <td className="px-4 py-4 whitespace-nowrap">{requestSummaryRow?.submittedBy || '—'}</td>
+                        <td className="px-4 py-4 whitespace-nowrap text-center">{requestSummaryRow?.totalMembers || '0'}</td>
+                        <td className="px-4 py-4 whitespace-nowrap">{requestSummaryRow?.dateSubmitted || '—'}</td>
+                        <td className="px-4 py-4 whitespace-nowrap">
+                          <span className="inline-flex items-center gap-2">
+                            <span className="h-4 w-4 rounded-full bg-gradient-to-br from-amber-300 to-amber-500 shadow-[0_0_0_1px_rgba(180,83,9,0.15)]" />
+                            <span>{requestSummaryRow?.status || 'Pending'}</span>
+                          </span>
+                        </td>
+                        <td className="px-4 py-4 whitespace-nowrap">
+                          <Button variant="secondary" className="min-h-0 rounded-full px-5 py-2.5 text-sm font-medium" onClick={() => setImportPreviewOnly(true)}>
+                            Preview
+                          </Button>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            ) : (
+              <>
+                {formContent}
+                {isRequestApprovalPage ? (
+                  <FormField
+                    as="textarea"
+                    label="Reason"
+                    placeholder="Type the reason for approving or returning this request..."
+                    value={reviewReason}
+                    onChange={(event) => setReviewReason(event.target.value)}
+                  />
+                ) : null}
+              </>
+            )}
           </Modal>
         </>
       )}
@@ -1750,6 +1884,7 @@ export default function Members() {
     </div>
   );
 }
+
 
 
 
