@@ -858,6 +858,7 @@ export default function Members() {
   const [reviewReason, setReviewReason] = useState('');
   const [importFileName, setImportFileName] = useState('');
   const [importPreviewOnly, setImportPreviewOnly] = useState(false);
+  const [importStatusFilter, setImportStatusFilter] = useState('all');
   const csvInputRef = useRef(null);
   const excelInputRef = useRef(null);
   const previewMembers = (request) => {
@@ -896,6 +897,13 @@ export default function Members() {
     () => getComputedMemberStatus({ ...currentForm, id: editing?.id || currentForm.id }, scopedData.loans),
     [currentForm, editing?.id, scopedData.loans],
   );
+  const filteredImportRows = useMemo(() => {
+    if (importStatusFilter === 'all') return importRows;
+    if (importStatusFilter === 'valid') return importRows.filter((row) => row.isValid);
+    if (importStatusFilter === 'invalid') return importRows.filter((row) => row.statusTone === 'invalid' || row.importStatus?.toLowerCase() === 'invalid');
+    if (importStatusFilter === 'duplicate') return importRows.filter((row) => row.isDuplicate || row.importStatus?.toLowerCase() === 'duplicate');
+    return importRows;
+  }, [importRows, importStatusFilter]);
   const barangayFilterOptions = useMemo(
     () => Array.from(new Set([...BARANGAYS, ...scopedData.members.map((member) => barangayOnly(member.barangay)).filter(Boolean)])).sort((a, b) => a.localeCompare(b)),
     [scopedData.members],
@@ -1253,6 +1261,7 @@ export default function Members() {
         await importValidMembers(previewRows, file.name || 'imported-members.csv');
       } else {
         setImportRows(previewRows);
+        setImportStatusFilter('all');
         setImportSummary({
           total: previewRows.length,
           valid: previewRows.filter((row) => row.isValid).length,
@@ -1419,6 +1428,7 @@ export default function Members() {
       }));
       setRequestTarget(request);
       setImportRows(previewRows);
+      setImportStatusFilter('all');
       setImportSummary({
         total: previewRows.length,
         valid: previewRows.filter((row) => row.isValid).length,
@@ -1681,6 +1691,7 @@ export default function Members() {
             onClose={() => {
               setImportModalOpen(false);
               setImportRows([]);
+              setImportStatusFilter('all');
               setImportSummary({ total: 0, valid: 0, invalid: 0, duplicates: 0 });
               setImportFileName('');
               setImportPreviewOnly(false);
@@ -1690,6 +1701,7 @@ export default function Members() {
                 <Button variant="secondary" onClick={() => {
                   setImportModalOpen(false);
                   setImportRows([]);
+                  setImportStatusFilter('all');
                   setImportSummary({ total: 0, valid: 0, invalid: 0, duplicates: 0 });
                   setImportFileName('');
                   setImportPreviewOnly(false);
@@ -1705,6 +1717,7 @@ export default function Members() {
                       }, currentUser.username);
                       setImportModalOpen(false);
                       setImportRows([]);
+                      setImportStatusFilter('all');
                       setImportSummary({ total: 0, valid: 0, invalid: 0, duplicates: 0 });
                       setImportFileName('');
                       setImportPreviewOnly(false);
@@ -1728,22 +1741,54 @@ export default function Members() {
           >
             <div className="space-y-4">
               <div className="grid gap-3 sm:grid-cols-4">
-                <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-900">
+                <button
+                  type="button"
+                  className={`rounded-xl border p-3 text-left transition ${importStatusFilter === 'all' ? 'border-slate-400 bg-slate-100 shadow-sm' : 'border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-900'}`}
+                  onClick={() => setImportStatusFilter('all')}
+                >
                   <p className="text-xs font-bold uppercase text-slate-500">Total Rows</p>
                   <p className="text-2xl font-bold text-slate-900">{importSummary.total}</p>
-                </div>
-                <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 dark:border-emerald-500/20 dark:bg-emerald-500/10">
+                </button>
+                <button
+                  type="button"
+                  className={`rounded-xl border p-3 text-left transition ${importStatusFilter === 'valid' ? 'border-emerald-400 bg-emerald-100 shadow-sm' : 'border-emerald-200 bg-emerald-50 dark:border-emerald-500/20 dark:bg-emerald-500/10'}`}
+                  onClick={() => setImportStatusFilter('valid')}
+                >
                   <p className="text-xs font-bold uppercase text-emerald-700 dark:text-emerald-200">Valid</p>
                   <p className="text-2xl font-black text-emerald-800 dark:text-emerald-100">{importSummary.valid}</p>
-                </div>
-                <div className="rounded-xl border border-rose-200 bg-rose-50 p-3 dark:border-rose-500/20 dark:bg-rose-500/10">
+                </button>
+                <button
+                  type="button"
+                  className={`rounded-xl border p-3 text-left transition ${importStatusFilter === 'invalid' ? 'border-rose-400 bg-rose-100 shadow-sm' : 'border-rose-200 bg-rose-50 dark:border-rose-500/20 dark:bg-rose-500/10'}`}
+                  onClick={() => setImportStatusFilter('invalid')}
+                >
                   <p className="text-xs font-bold uppercase text-rose-700 dark:text-rose-200">Invalid</p>
                   <p className="text-2xl font-black text-rose-800 dark:text-rose-100">{importSummary.invalid}</p>
-                </div>
-                <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 dark:border-amber-500/20 dark:bg-amber-500/10">
+                </button>
+                <button
+                  type="button"
+                  className={`rounded-xl border p-3 text-left transition ${importStatusFilter === 'duplicate' ? 'border-amber-400 bg-amber-100 shadow-sm' : 'border-amber-200 bg-amber-50 dark:border-amber-500/20 dark:bg-amber-500/10'}`}
+                  onClick={() => setImportStatusFilter('duplicate')}
+                >
                   <p className="text-xs font-bold uppercase text-amber-700 dark:text-amber-200">Duplicates</p>
                   <p className="text-2xl font-black text-amber-800 dark:text-amber-100">{importSummary.duplicates}</p>
-                </div>
+                </button>
+              </div>
+              <div className="flex items-center justify-between gap-3 text-sm text-slate-500">
+                <p>
+                  Showing
+                  {' '}
+                  <span className="font-semibold text-slate-900">{filteredImportRows.length}</span>
+                  {' '}
+                  of
+                  {' '}
+                  <span className="font-semibold text-slate-900">{importSummary.total}</span>
+                  {' '}
+                  rows
+                </p>
+                <Button variant="secondary" className="min-h-0 rounded-full px-4 py-2 text-xs font-semibold" onClick={() => setImportStatusFilter('all')}>
+                  Clear Filter
+                </Button>
               </div>
 
               <div className="overflow-x-auto rounded-2xl border border-slate-200 dark:border-slate-800">
@@ -1760,7 +1805,7 @@ export default function Members() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-[#E2E8F0]">
-                    {importRows.map((row) => (
+                    {filteredImportRows.map((row) => (
                       <tr
                         key={`${row.rowNumber}-${row.cifNumber || row.member || ''}`}
                         className={row.statusTone === 'invalid' ? 'bg-rose-50/40' : row.statusTone === 'warning' ? 'bg-amber-50/40' : ''}
