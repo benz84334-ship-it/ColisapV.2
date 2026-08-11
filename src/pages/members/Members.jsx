@@ -81,7 +81,11 @@ const BENEFIT_CATEGORY_OPTIONS = MEMBER_BENEFIT_CATEGORIES.map((value) => ({
 function normalizeImportCategory(value = '', contribution = '') {
   const explicit = normalizeBenefitCategory(value);
   if (explicit) return explicit;
-  const amount = Number(String(contribution || '').replace(/,/g, '').trim());
+  const cleanedContribution = String(contribution || '')
+    .replace(/,/g, '')
+    .replace(/[^\d.-]/g, '')
+    .trim();
+  const amount = Number(cleanedContribution);
   if (Number.isFinite(amount)) {
     if (amount === 40000) return MEMBER_BENEFIT_CATEGORIES[0];
     if (amount === 60000) return MEMBER_BENEFIT_CATEGORIES[1];
@@ -140,6 +144,35 @@ function resolveImportCategory(row = {}) {
     categoryValue,
     contributionValue,
   );
+}
+
+function getPreviewBenefitCategory(row = {}) {
+  const normalizedCategory = resolveImportCategory(row);
+  if (normalizedCategory) return normalizedCategory;
+
+  const raw = row.raw || {};
+  const rawMetadata = raw.metadata || {};
+  const contributionValue = row.savings
+    || row.normalized?.savings
+    || row.shareCapital
+    || row.normalized?.shareCapital
+    || raw.shareCapital
+    || raw.Contribution
+    || raw.contribution
+    || raw.Savings
+    || raw.savings
+    || raw['Contribution Amount']
+    || raw['Amount Contributed']
+    || rawMetadata.shareCapital
+    || rawMetadata.Contribution
+    || rawMetadata.contribution
+    || rawMetadata.Savings
+    || rawMetadata.savings
+    || '';
+  const amount = Number(String(contributionValue || '').replace(/,/g, '').replace(/[^\d.-]/g, '').trim());
+  if (amount === 40000) return MEMBER_BENEFIT_CATEGORIES[0];
+  if (amount === 60000) return MEMBER_BENEFIT_CATEGORIES[1];
+  return '';
 }
 
 function normalizeImportText(value) {
@@ -309,7 +342,7 @@ function mapImportedMemberRow(row = {}, generatedCifNumber = '') {
     lastName || '',
   ].filter(Boolean).join('|');
   const benefitCategory = normalizeImportCategory(
-    pickImportValue(row, ['benefitCategory', 'Benefit Category', 'Category', 'category']),
+    pickImportValue(row, ['benefitCategory', 'Benefit Category', 'BenefitCategory', 'Category', 'category', 'benefit_category']),
     pickImportValue(row, ['shareCapital', 'Contribution', 'Savings', 'Contribution Amount', 'Amount Contributed', 'share_capital']),
   ) || MEMBER_BENEFIT_CATEGORIES[0];
   return {
@@ -1282,10 +1315,11 @@ export default function Members() {
         const memberName = normalizeImportText(pickImportValue(row, ['Member', 'Member Name', 'Full Name', 'Name']));
         const barangay = normalizeImportText(pickImportValue(row, ['Barangay / Municipality', 'Barangay', 'Municipality']));
         const savings = normalizeImportText(pickImportValue(row, ['Contribution', 'Savings']));
-        const benefitCategory = normalizeImportCategory(
-          pickImportValue(row, ['Category', 'Benefit Category', 'benefitCategory', 'category']),
+        const benefitCategory = getPreviewBenefitCategory({
+          ...row,
           savings,
-        ) || MEMBER_BENEFIT_CATEGORIES[0];
+          raw: row,
+        }) || MEMBER_BENEFIT_CATEGORIES[0];
         const contact = normalizeImportText(pickImportValue(row, ['Contact']));
         const lastContribution = getImportedContributionDate(row);
         const status = normalizeImportStatus(pickImportValue(row, ['Status']));
@@ -1918,7 +1952,7 @@ export default function Members() {
                         <td className="px-6 py-5 whitespace-nowrap font-semibold">{row.member || 'Missing member name'}</td>
                         <td className="px-6 py-5">{row.barangay || 'â€”'}</td>
                         <td className="px-6 py-5 whitespace-nowrap">₱{row.savings ? Number(String(row.savings).replace(/,/g, '')).toLocaleString('en-PH') : '0'}</td>
-                        <td className="px-6 py-5 whitespace-nowrap">{formatImportCategory(resolveImportCategory(row), row.savings || row.normalized?.savings || row.raw?.Contribution || row.raw?.contribution || row.raw?.Savings || row.raw?.savings)}</td>
+                        <td className="px-6 py-5 whitespace-nowrap">{formatImportCategory(getPreviewBenefitCategory(row), row.savings || row.normalized?.savings || row.raw?.Contribution || row.raw?.contribution || row.raw?.Savings || row.raw?.savings)}</td>
                         <td className="px-6 py-5 whitespace-nowrap">{row.contact || row.contactNumber || row.normalized?.contact || 'â€”'}</td>
                         <td className="px-6 py-5 whitespace-nowrap">{row.lastContributionDate ? formatDate(row.lastContributionDate) : 'â€”'}</td>
                         <td className="px-6 py-5 whitespace-nowrap">
