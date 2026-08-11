@@ -112,8 +112,8 @@ export default function Dashboard() {
           <StatCard accent="blue" icon={FiUserCheck} title="Active Members" value={activeMembers} />
           <StatCard accent="green" icon={FiUserMinus} title="Inactive Members" value={inactiveMembers} />
           <StatCard accent="red" icon={FiAlertTriangle} title="Dormant Members" value={dormantMembers} />
-          <StatCard accent="violet" icon={FiUsers} title="40K Availments" value={fortyKMembers.length} />
-          <StatCard accent="violet" icon={FiUsers} title="60K Availments" value={sixtyKMembers.length} />
+          <StatCard accent="violet" icon={FiUsers} title="40K Category" value={fortyKMembers.length} />
+          <StatCard accent="violet" icon={FiUsers} title="60K Category" value={sixtyKMembers.length} />
         </div>
       ) : null}
 

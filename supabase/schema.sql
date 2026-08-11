@@ -112,10 +112,10 @@ declare
   cleaned text := nullif(trim(coalesce(value, '')), '');
 begin
   if cleaned is not null then
-    if cleaned ~* '^(40\s*k|40,?000|40\s*,\s*000|basic life savings)$' then
+    if cleaned ~* '^(40\s*k|40,?000|40\s*,\s*000|basic life savings|benefit category:?\s*40\s*k|plan:?\s*40\s*k|coverage:?\s*40\s*k)$' then
       return '40k';
     end if;
-    if cleaned ~* '^(60\s*k|60,?000|60\s*,\s*000|premium life savings)$' then
+    if cleaned ~* '^(60\s*k|60,?000|60\s*,\s*000|premium life savings|benefit category:?\s*60\s*k|plan:?\s*60\s*k|coverage:?\s*60\s*k)$' then
       return '60k';
     end if;
     if lower(cleaned) in ('40k', '40k (php 40,000.00)', '40k (php40,000.00)') then
@@ -137,6 +137,33 @@ begin
 
   return null;
 end;
+$$;
+
+create or replace function public.extract_import_benefit_category(payload jsonb)
+returns text
+language sql
+immutable
+as $$
+  select public.normalize_benefit_category(
+    coalesce(
+      nullif(trim(payload->>'benefitCategory'), ''),
+      nullif(trim(payload->>'benefit_category'), ''),
+      nullif(trim(payload->>'Benefit Category'), ''),
+      nullif(trim(payload->>'BenefitCategory'), ''),
+      nullif(trim(payload->>'Category'), ''),
+      nullif(trim(payload->>'category'), ''),
+      nullif(trim(payload->>'Benefit'), ''),
+      nullif(trim(payload->>'benefit'), ''),
+      nullif(trim(payload->>'Plan'), ''),
+      nullif(trim(payload->>'plan'), ''),
+      nullif(trim(payload->>'Coverage'), ''),
+      nullif(trim(payload->>'coverage'), '')
+    ),
+    case
+      when nullif(trim(coalesce(payload->>'shareCapital', payload->>'Savings', payload->>'Saving', payload->>'Savings Amount', payload->>'Amount Saved', payload->>'share_capital')), '') is null then null
+      else trim(coalesce(payload->>'shareCapital', payload->>'Savings', payload->>'Saving', payload->>'Savings Amount', payload->>'Amount Saved', payload->>'share_capital'))::numeric
+    end
+  );
 $$;
 
 drop trigger if exists sync_approved_request_to_member_trigger on public.requests;

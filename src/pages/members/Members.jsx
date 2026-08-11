@@ -68,6 +68,7 @@ const IMPORT_HEADERS = [
   'Member',
   'Barangay / Municipality',
   'Contribution',
+  'Benefit Category',
   'Category',
   'Contact',
   'Last Contribution Date',
@@ -149,17 +150,23 @@ function resolveImportCategory(row = {}) {
 function extractImportedBenefitCategory(row = {}) {
   const raw = row.raw || row;
   const categoryKeys = [
+    'BenefitCategory',
+    'Benefit',
+    'Coverage',
+    'Plan',
     'Category',
     'Benefit Category',
-    'BenefitCategory',
     'benefitCategory',
     'benefit_category',
     'benefit category',
     'category',
+    'plan',
+    'coverage',
   ];
   const categoryValue = pickImportValue(raw, categoryKeys);
   const normalized = normalizeImportText(categoryValue);
   if (!normalized) return '';
+  if (normalized === '—' || normalized === '-' || normalized.toLowerCase() === 'n/a') return '';
   if (/^40\s*k$/i.test(normalized) || /40,?000/i.test(normalized) || /basic life savings/i.test(normalized)) return '40k';
   if (/^60\s*k$/i.test(normalized) || /60,?000/i.test(normalized) || /premium life savings/i.test(normalized)) return '60k';
   return normalized;
@@ -170,6 +177,8 @@ function formatImportedCategoryCell(row = {}) {
   const categoryText = extractImportedBenefitCategory(raw)
     || normalizeImportText(row.rawBenefitCategory)
     || normalizeImportText(row.benefitCategory)
+    || normalizeImportText(row.plan)
+    || normalizeImportText(row.coverage)
     || normalizeImportText(row.Category)
     || normalizeImportText(row.category)
     || normalizeImportText(row.normalized?.benefitCategory);
@@ -349,7 +358,7 @@ function mapImportedMemberRow(row = {}, generatedCifNumber = '') {
   const benefitCategory = normalizeImportCategory(
     extractImportedBenefitCategory(row),
     pickImportValue(row, ['shareCapital', 'Contribution', 'Savings', 'Contribution Amount', 'Amount Contributed', 'share_capital']),
-  ) || MEMBER_BENEFIT_CATEGORIES[0];
+  );
   return {
     memberId: sheetCifNumber || generatedCifNumber || '',
     cifNumber: sheetCifNumber || generatedCifNumber || '',
@@ -443,6 +452,7 @@ function validateImportedMemberRow(row = {}, currentMembers = [], seenCifs = new
   const benefitCategory = normalizeImportCategory(
     row.benefitCategory
     || row.BenefitCategory
+    || row['Benefit Category']
     || row.Category
     || row.category
     || '',
@@ -1320,7 +1330,8 @@ export default function Members() {
         const memberName = normalizeImportText(pickImportValue(row, ['Member', 'Member Name', 'Full Name', 'Name']));
         const barangay = normalizeImportText(pickImportValue(row, ['Barangay / Municipality', 'Barangay', 'Municipality']));
         const savings = normalizeImportText(pickImportValue(row, ['Contribution', 'Savings']));
-        const benefitCategory = extractImportedBenefitCategory(row) || MEMBER_BENEFIT_CATEGORIES[0];
+        const rawBenefitCategory = extractImportedBenefitCategory(row);
+        const benefitCategory = rawBenefitCategory || '';
         const contact = normalizeImportText(pickImportValue(row, ['Contact']));
         const lastContribution = getImportedContributionDate(row);
         const status = normalizeImportStatus(pickImportValue(row, ['Status']));
@@ -1347,11 +1358,11 @@ export default function Members() {
         ].map((value) => String(value || '').trim().toLowerCase()).join('|');
         if (seenImportRows.has(identityKey)) return null;
         seenImportRows.add(identityKey);
-        const resolvedBenefitCategory = validation.normalized.benefitCategory || benefitCategory;
+        const resolvedBenefitCategory = validation.normalized.benefitCategory || rawBenefitCategory || '';
         return {
           ...validation.normalized,
           benefitCategory: resolvedBenefitCategory,
-          rawBenefitCategory: extractImportedBenefitCategory(row),
+          rawBenefitCategory,
           raw: row,
           rowNumber: sourceRow,
           normalized: validation.normalized,
