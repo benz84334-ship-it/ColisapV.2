@@ -148,58 +148,33 @@ function resolveImportCategory(row = {}) {
 
 function extractImportedBenefitCategory(row = {}) {
   const raw = row.raw || row;
-  const explicitCategory = pickImportValue(raw, [
+  const categoryKeys = [
+    'Category',
+    'Benefit Category',
+    'BenefitCategory',
     'benefitCategory',
     'benefit_category',
     'benefit category',
-    'Benefit Category',
-    'BenefitCategory',
-    'Category',
     'category',
-  ]);
-  const savings = pickImportValue(raw, [
-    'shareCapital',
-    'Contribution',
-    'contribution',
-    'Savings',
-    'savings',
-    'Contribution Amount',
-    'Amount Contributed',
-    'share_capital',
-  ]);
-  return normalizeImportCategory(explicitCategory, savings);
+  ];
+  const categoryValue = pickImportValue(raw, categoryKeys);
+  const normalized = normalizeImportText(categoryValue);
+  if (!normalized) return '';
+  if (/^40\s*k$/i.test(normalized) || /40,?000/i.test(normalized) || /basic life savings/i.test(normalized)) return '40k';
+  if (/^60\s*k$/i.test(normalized) || /60,?000/i.test(normalized) || /premium life savings/i.test(normalized)) return '60k';
+  return normalized;
 }
 
 function formatImportedCategoryCell(row = {}) {
   const raw = row.raw || row;
-  const entries = Object.entries(raw);
-  const categoryEntry = entries.find(([key, value]) => {
-    const normalizedKey = normalizeImportKey(key);
-    const normalizedValue = normalizeImportText(value).toLowerCase();
-    return (
-      normalizedKey.includes('benefitcategory')
-      || normalizedKey.includes('benefitcategory')
-      || normalizedKey === 'category'
-      || normalizedKey.includes('category')
-      || normalizedValue === '40k'
-      || normalizedValue === '60k'
-      || normalizedValue.includes('40,000')
-      || normalizedValue.includes('60,000')
-      || normalizedValue.includes('basic life savings')
-      || normalizedValue.includes('premium life savings')
-    );
-  });
-  const categoryText = normalizeImportText(
-    row.rawBenefitCategory
-    || row.benefitCategory
-    || row.Category
-    || row.category
-    || row.normalized?.benefitCategory
-    || (categoryEntry ? categoryEntry[1] : '')
-    || '',
-  );
+  const categoryText = extractImportedBenefitCategory(raw)
+    || normalizeImportText(row.rawBenefitCategory)
+    || normalizeImportText(row.benefitCategory)
+    || normalizeImportText(row.Category)
+    || normalizeImportText(row.category)
+    || normalizeImportText(row.normalized?.benefitCategory);
 
-  if (!categoryText) return '40k';
+  if (!categoryText) return '—';
   if (/^40\s*k$/i.test(categoryText) || /40,?000/i.test(categoryText)) return '40k';
   if (/^60\s*k$/i.test(categoryText) || /60,?000/i.test(categoryText)) return '60k';
   return categoryText;
