@@ -244,11 +244,15 @@ function mapImportedMemberRow(row = {}, generatedCifNumber = '') {
     firstName || '',
     lastName || '',
   ].filter(Boolean).join('|');
+  const benefitCategory = normalizeBenefitCategory(
+    pickImportValue(row, ['benefitCategory', 'Benefit Category', 'Category', 'category'])
+    || MEMBER_BENEFIT_CATEGORIES[0],
+  );
   return {
     memberId: sheetCifNumber || generatedCifNumber || '',
     cifNumber: sheetCifNumber || generatedCifNumber || '',
     applicationStatus: normalizeImportText(pickImportValue(row, ['applicationStatus', 'Application Status'])) || '',
-    benefitCategory: MEMBER_BENEFIT_CATEGORIES[0],
+    benefitCategory,
     firstName,
     middleName,
     lastName,
@@ -334,6 +338,13 @@ function validateImportedMemberRow(row = {}, currentMembers = [], seenCifs = new
   const memberName = normalizeImportText(row.member || row.Member || '');
   const barangay = normalizeImportText(row['Barangay / Municipality'] || row.barangay || '');
   const savingsRaw = String(row.Contribution ?? row.contribution ?? row.Savings ?? row.savings ?? '').trim();
+  const benefitCategory = normalizeBenefitCategory(
+    row.benefitCategory
+    || row.BenefitCategory
+    || row.Category
+    || row.category
+    || '',
+  );
   const contact = normalizeImportText(row.Contact || row.contact || '');
   const lastContributionDateRaw = row['Last Contribution Date'] || row.lastContributionDate || '';
   const contributionDateRaw = pickImportValue(row, [
@@ -397,6 +408,7 @@ function validateImportedMemberRow(row = {}, currentMembers = [], seenCifs = new
       member: memberName,
       barangay,
       savings: savingsRaw,
+      benefitCategory,
       contact,
       lastContributionDate: normalizeImportedDate(contributionDateRaw),
       status: status,
@@ -1205,6 +1217,7 @@ export default function Members() {
         const memberName = normalizeImportText(pickImportValue(row, ['Member', 'Member Name', 'Full Name', 'Name']));
         const barangay = normalizeImportText(pickImportValue(row, ['Barangay / Municipality', 'Barangay', 'Municipality']));
         const savings = normalizeImportText(pickImportValue(row, ['Contribution', 'Savings']));
+        const benefitCategory = normalizeBenefitCategory(pickImportValue(row, ['Category', 'Benefit Category', 'benefitCategory', 'category']));
         const contact = normalizeImportText(pickImportValue(row, ['Contact']));
         const lastContribution = getImportedContributionDate(row);
         const status = normalizeImportStatus(pickImportValue(row, ['Status']));
@@ -1214,6 +1227,8 @@ export default function Members() {
           member: memberName,
           barangay,
           Contribution: savings,
+          Category: benefitCategory,
+          benefitCategory,
           Contact: contact,
           'Last Contribution Date': lastContribution,
           Status: status,
@@ -1231,6 +1246,7 @@ export default function Members() {
         seenImportRows.add(identityKey);
         return {
           ...validation.normalized,
+          benefitCategory: validation.normalized.benefitCategory || benefitCategory,
           raw: row,
           rowNumber: sourceRow,
           normalized: validation.normalized,
@@ -1314,6 +1330,7 @@ export default function Members() {
         full_name: row.member || member.fullName,
         barangay: row.barangay || member.barangay,
         shareCapital: normalizeImportedNumber(row.savings),
+        benefitCategory: row.benefitCategory || row.normalized?.benefitCategory || member.benefitCategory,
         contactNumber: row.contact || row.normalized?.contact || member.contactNumber,
         contact: row.contact || row.normalized?.contact || member.contactNumber,
         lastContributionDate: contributionDate || member.lastContributionDate || member.membershipDate || todayIso(),
