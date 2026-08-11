@@ -374,20 +374,14 @@ begin
       nullif(trim(item->>'cifNumber'), ''),
       coalesce(nullif(trim(item->>'applicationStatus'), ''), 'New'),
       coalesce(
+        public.extract_import_benefit_category(item),
         public.normalize_benefit_category(
-          coalesce(
-            nullif(trim(item->>'benefitCategory'), ''),
-            nullif(trim(item->>'benefit_category'), ''),
-            nullif(trim(item->>'Benefit Category'), ''),
-            nullif(trim(item->>'Category'), ''),
-            nullif(trim(item->>'category'), '')
-          ),
+          null,
           coalesce(
             case when nullif(trim(item->>'shareCapital'), '') is null then null else trim(item->>'shareCapital')::numeric end,
             0
           )
-        ),
-        public.normalize_benefit_category(null, coalesce(case when nullif(trim(item->>'shareCapital'), '') is null then null else trim(item->>'shareCapital')::numeric end, 0))
+        )
       ),
       nullif(trim(item->>'firstName'), ''),
       nullif(trim(item->>'middleName'), ''),
@@ -608,6 +602,7 @@ begin
       public.normalize_benefit_category(
         coalesce(
           nullif(trim(new.benefit_category), ''),
+          public.extract_import_benefit_category(new.metadata),
           nullif(trim(new.metadata->>'benefitCategory'), ''),
           nullif(trim(new.metadata->>'benefit_category'), ''),
           nullif(trim(new.metadata->>'Benefit Category'), ''),
@@ -1079,16 +1074,7 @@ begin
       payload->>'dateJoined'
     )), fallback_date),
     'benefit_category', coalesce(
-      public.normalize_benefit_category(
-        coalesce(
-          nullif(trim(payload->>'benefitCategory'), ''),
-          nullif(trim(payload->>'benefit_category'), ''),
-          nullif(trim(payload->>'Benefit Category'), ''),
-          nullif(trim(payload->>'Category'), ''),
-          nullif(trim(payload->>'category'), '')
-        ),
-        share_capital_value
-      ),
+      public.extract_import_benefit_category(payload),
       public.normalize_benefit_category(null, share_capital_value)
     ),
     'beneficiaries', coalesce(payload->'beneficiaries', '[]'::jsonb),

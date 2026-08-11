@@ -42,7 +42,7 @@ export const BARANGAYS = ANTIQUE_BARANGAYS;
 
 export const GENDERS = ['Female', 'Male'];
 export const MEMBER_STATUSES = ['Active', 'Inactive', 'Dormant'];
-export const MEMBER_BENEFIT_CATEGORIES = ['40K (PHP 40,000.00)', '60K (PHP 60,000.00)'];
+export const MEMBER_BENEFIT_CATEGORIES = ['40K', '60K'];
 export const LOAN_STATUSES = ['Pending', 'Active', 'Completed', 'Overdue'];
 export const COLLECTION_STATUSES = ['Paid', 'Partial', 'Pending', 'Overdue'];
 export const PAYMENT_STATUSES = ['Completed', 'Pending', 'Reversed'];
@@ -92,8 +92,8 @@ export function normalizeBenefitCategory(value = '') {
   const text = String(value || '').trim();
   if (!text) return '';
 
-  if (/basic life savings|40k/i.test(text)) return MEMBER_BENEFIT_CATEGORIES[0];
-  if (/premium life savings|60k/i.test(text)) return MEMBER_BENEFIT_CATEGORIES[1];
+  if (/basic life savings|40k|php\s*40,?000\.00/i.test(text)) return MEMBER_BENEFIT_CATEGORIES[0];
+  if (/premium life savings|60k|php\s*60,?000\.00/i.test(text)) return MEMBER_BENEFIT_CATEGORIES[1];
 
   const matched = MEMBER_BENEFIT_CATEGORIES.find((option) => option.toLowerCase() === text.toLowerCase());
   return matched || text;

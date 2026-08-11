@@ -175,6 +175,7 @@ function extractImportedBenefitCategory(row = {}) {
 function formatImportedCategoryCell(row = {}) {
   const raw = row.raw || row;
   const categoryText = extractImportedBenefitCategory(raw)
+    || resolveImportCategory(raw)
     || normalizeImportText(row.rawBenefitCategory)
     || normalizeImportText(row.benefitCategory)
     || normalizeImportText(row.plan)
@@ -184,9 +185,15 @@ function formatImportedCategoryCell(row = {}) {
     || normalizeImportText(row.normalized?.benefitCategory);
 
   if (!categoryText) return '—';
-  if (/^40\s*k$/i.test(categoryText) || /40,?000/i.test(categoryText)) return '40k';
-  if (/^60\s*k$/i.test(categoryText) || /60,?000/i.test(categoryText)) return '60k';
+  if (/^40\s*k$/i.test(categoryText) || /40,?000/i.test(categoryText)) return '40K';
+  if (/^60\s*k$/i.test(categoryText) || /60,?000/i.test(categoryText)) return '60K';
   return categoryText;
+}
+
+function getImportedCategoryTone(value = '') {
+  if (/^40\s*k$/i.test(value)) return 'emerald';
+  if (/^60\s*k$/i.test(value)) return 'blue';
+  return 'slate';
 }
 
 function normalizeImportText(value) {
@@ -1330,7 +1337,7 @@ export default function Members() {
         const memberName = normalizeImportText(pickImportValue(row, ['Member', 'Member Name', 'Full Name', 'Name']));
         const barangay = normalizeImportText(pickImportValue(row, ['Barangay / Municipality', 'Barangay', 'Municipality']));
         const savings = normalizeImportText(pickImportValue(row, ['Contribution', 'Savings']));
-        const rawBenefitCategory = extractImportedBenefitCategory(row);
+        const rawBenefitCategory = resolveImportCategory(row);
         const benefitCategory = rawBenefitCategory || '';
         const contact = normalizeImportText(pickImportValue(row, ['Contact']));
         const lastContribution = getImportedContributionDate(row);
@@ -1358,7 +1365,7 @@ export default function Members() {
         ].map((value) => String(value || '').trim().toLowerCase()).join('|');
         if (seenImportRows.has(identityKey)) return null;
         seenImportRows.add(identityKey);
-        const resolvedBenefitCategory = validation.normalized.benefitCategory || rawBenefitCategory || '';
+        const resolvedBenefitCategory = validation.normalized.benefitCategory || rawBenefitCategory || resolveImportCategory(row) || '';
         return {
           ...validation.normalized,
           benefitCategory: resolvedBenefitCategory,
@@ -1556,6 +1563,7 @@ export default function Members() {
         member: member.fullName || member.member || member.full_name || 'Unnamed member',
         barangay: member.barangay || '',
         savings: String(member.shareCapital ?? member.contribution ?? 0),
+        benefitCategory: normalizeBenefitCategory(member.benefitCategory || member.plan || ''),
         contact: member.contactNumber || '',
         lastContributionDate: member.lastContributionDate || member.membershipDate || member.lastShareCapitalDepositDate || '',
         normalized: { status: member.status || 'Active' },
@@ -1965,7 +1973,19 @@ export default function Members() {
                         <td className="px-6 py-5 whitespace-nowrap overflow-hidden text-ellipsis font-semibold">{row.member || 'Missing member name'}</td>
                         <td className="px-6 py-5 whitespace-nowrap overflow-hidden text-ellipsis">{row.barangay || 'â€”'}</td>
                         <td className="px-6 py-5 whitespace-nowrap overflow-hidden text-ellipsis">₱{row.savings ? Number(String(row.savings).replace(/,/g, '')).toLocaleString('en-PH') : '0'}</td>
-                        <td className="px-6 py-5 whitespace-nowrap overflow-hidden text-ellipsis font-semibold">{formatImportedCategoryCell(row)}</td>
+                        <td className="px-6 py-5 whitespace-nowrap overflow-hidden text-ellipsis">
+                          <span
+                            className={`inline-flex min-w-16 justify-center rounded-full border px-3 py-1 text-sm font-extrabold tracking-wide ${
+                              getImportedCategoryTone(formatImportedCategoryCell(row)) === 'emerald'
+                                ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                                : getImportedCategoryTone(formatImportedCategoryCell(row)) === 'blue'
+                                  ? 'border-sky-200 bg-sky-50 text-sky-700'
+                                  : 'border-slate-200 bg-slate-100 text-slate-700'
+                            }`}
+                          >
+                            {formatImportedCategoryCell(row)}
+                          </span>
+                        </td>
                         <td className="px-6 py-5 whitespace-nowrap overflow-hidden text-ellipsis">{row.contact || row.contactNumber || row.normalized?.contact || 'â€”'}</td>
                         <td className="px-6 py-5 whitespace-nowrap overflow-hidden text-ellipsis">{row.lastContributionDate ? formatDate(row.lastContributionDate) : 'â€”'}</td>
                         <td className="px-6 py-5 whitespace-nowrap overflow-hidden text-ellipsis">

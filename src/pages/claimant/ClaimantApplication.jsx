@@ -7,7 +7,7 @@ import PageHeader from '../../components/ui/PageHeader.jsx';
 import { useAuth } from '../../context/AuthContext.jsx';
 import { useData } from '../../context/DataContext.jsx';
 import { useToast } from '../../context/ToastContext.jsx';
-import { BARANGAYS, BRANCH_OPTIONS, ROLES } from '../../utils/constants.js';
+import { BARANGAYS, BRANCH_OPTIONS, MEMBER_BENEFIT_CATEGORIES, ROLES } from '../../utils/constants.js';
 import { ANTIQUE_BARANGAYS } from '../../utils/antiqueBarangays.js';
 import { formatCifNumber, todayIso } from '../../utils/formatters.js';
 
@@ -17,7 +17,7 @@ const SEX_OPTIONS = ['Male', 'Female'];
 const CIVIL_STATUS_OPTIONS = ['Single', 'Married', 'Widowed', 'Separated'];
 const SUFFIX_OPTIONS = ['', 'Jr.', 'Sr.', 'II', 'III', 'IV', 'V'];
 const RELATIONSHIP_OPTIONS = ['Spouse', 'Son', 'Daughter', 'Father', 'Mother', 'Brother', 'Sister', 'Grandparent', 'Grandchild', 'Relative', 'Others'];
-const BENEFIT_OPTIONS = ['40K (PHP 40,000.00)', '60K (PHP 60,000.00)'];
+const BENEFIT_OPTIONS = MEMBER_BENEFIT_CATEGORIES;
 const VALID_ID_OPTIONS = ['PhilSys ID', "Driver's License", 'Passport', 'SSS ID', 'UMID', 'PRC ID', "Voter's ID", 'Postal ID', 'Barangay ID', 'Senior Citizen ID', 'Other Government ID'];
 const REQUIRED_DOCS = [
   'Death Certificate',
