@@ -78,6 +78,17 @@ const BENEFIT_CATEGORY_OPTIONS = MEMBER_BENEFIT_CATEGORIES.map((value) => ({
   label: value.startsWith('40K') ? '40K' : '60K',
 }));
 
+function normalizeImportCategory(value = '', contribution = '') {
+  const explicit = normalizeBenefitCategory(value);
+  if (explicit && explicit !== String(value || '').trim()) return explicit;
+  const amount = Number(String(contribution || '').replace(/,/g, '').trim());
+  if (Number.isFinite(amount)) {
+    if (amount === 40000) return MEMBER_BENEFIT_CATEGORIES[0];
+    if (amount === 60000) return MEMBER_BENEFIT_CATEGORIES[1];
+  }
+  return explicit || '';
+}
+
 function normalizeImportText(value) {
   return String(value ?? '').replace(/\s+/g, ' ').trim();
 }
@@ -244,10 +255,10 @@ function mapImportedMemberRow(row = {}, generatedCifNumber = '') {
     firstName || '',
     lastName || '',
   ].filter(Boolean).join('|');
-  const benefitCategory = normalizeBenefitCategory(
-    pickImportValue(row, ['benefitCategory', 'Benefit Category', 'Category', 'category'])
-    || MEMBER_BENEFIT_CATEGORIES[0],
-  );
+  const benefitCategory = normalizeImportCategory(
+    pickImportValue(row, ['benefitCategory', 'Benefit Category', 'Category', 'category']),
+    pickImportValue(row, ['shareCapital', 'Contribution', 'Savings', 'Contribution Amount', 'Amount Contributed', 'share_capital']),
+  ) || MEMBER_BENEFIT_CATEGORIES[0];
   return {
     memberId: sheetCifNumber || generatedCifNumber || '',
     cifNumber: sheetCifNumber || generatedCifNumber || '',
@@ -338,12 +349,13 @@ function validateImportedMemberRow(row = {}, currentMembers = [], seenCifs = new
   const memberName = normalizeImportText(row.member || row.Member || '');
   const barangay = normalizeImportText(row['Barangay / Municipality'] || row.barangay || '');
   const savingsRaw = String(row.Contribution ?? row.contribution ?? row.Savings ?? row.savings ?? '').trim();
-  const benefitCategory = normalizeBenefitCategory(
+  const benefitCategory = normalizeImportCategory(
     row.benefitCategory
     || row.BenefitCategory
     || row.Category
     || row.category
     || '',
+    savingsRaw,
   );
   const contact = normalizeImportText(row.Contact || row.contact || '');
   const lastContributionDateRaw = row['Last Contribution Date'] || row.lastContributionDate || '';
@@ -1217,7 +1229,10 @@ export default function Members() {
         const memberName = normalizeImportText(pickImportValue(row, ['Member', 'Member Name', 'Full Name', 'Name']));
         const barangay = normalizeImportText(pickImportValue(row, ['Barangay / Municipality', 'Barangay', 'Municipality']));
         const savings = normalizeImportText(pickImportValue(row, ['Contribution', 'Savings']));
-        const benefitCategory = normalizeBenefitCategory(pickImportValue(row, ['Category', 'Benefit Category', 'benefitCategory', 'category']));
+        const benefitCategory = normalizeImportCategory(
+          pickImportValue(row, ['Category', 'Benefit Category', 'benefitCategory', 'category']),
+          savings,
+        ) || MEMBER_BENEFIT_CATEGORIES[0];
         const contact = normalizeImportText(pickImportValue(row, ['Contact']));
         const lastContribution = getImportedContributionDate(row);
         const status = normalizeImportStatus(pickImportValue(row, ['Status']));
@@ -1330,7 +1345,7 @@ export default function Members() {
         full_name: row.member || member.fullName,
         barangay: row.barangay || member.barangay,
         shareCapital: normalizeImportedNumber(row.savings),
-        benefitCategory: row.benefitCategory || row.normalized?.benefitCategory || member.benefitCategory,
+        benefitCategory: normalizeImportCategory(row.benefitCategory || row.normalized?.benefitCategory || member.benefitCategory, row.savings) || member.benefitCategory,
         contactNumber: row.contact || row.normalized?.contact || member.contactNumber,
         contact: row.contact || row.normalized?.contact || member.contactNumber,
         lastContributionDate: contributionDate || member.lastContributionDate || member.membershipDate || todayIso(),
