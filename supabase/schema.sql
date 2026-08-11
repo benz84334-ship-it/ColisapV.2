@@ -112,10 +112,16 @@ declare
   cleaned text := nullif(trim(coalesce(value, '')), '');
 begin
   if cleaned is not null then
-    if cleaned ~* '40\s*k|40,?000|basic life savings' then
+    if cleaned ~* '^(40\s*k|40,?000|40\s*,\s*000|basic life savings)$' then
       return '40k';
     end if;
-    if cleaned ~* '60\s*k|60,?000|premium life savings' then
+    if cleaned ~* '^(60\s*k|60,?000|60\s*,\s*000|premium life savings)$' then
+      return '60k';
+    end if;
+    if lower(cleaned) in ('40k', '40k (php 40,000.00)', '40k (php40,000.00)') then
+      return '40k';
+    end if;
+    if lower(cleaned) in ('60k', '60k (php 60,000.00)', '60k (php60,000.00)') then
       return '60k';
     end if;
     return lower(cleaned);
