@@ -80,13 +80,66 @@ const BENEFIT_CATEGORY_OPTIONS = MEMBER_BENEFIT_CATEGORIES.map((value) => ({
 
 function normalizeImportCategory(value = '', contribution = '') {
   const explicit = normalizeBenefitCategory(value);
-  if (explicit && explicit !== String(value || '').trim()) return explicit;
+  if (explicit) return explicit;
   const amount = Number(String(contribution || '').replace(/,/g, '').trim());
   if (Number.isFinite(amount)) {
     if (amount === 40000) return MEMBER_BENEFIT_CATEGORIES[0];
     if (amount === 60000) return MEMBER_BENEFIT_CATEGORIES[1];
   }
   return explicit || '';
+}
+
+function formatImportCategory(value = '', contribution = '') {
+  const normalized = normalizeImportCategory(value, contribution);
+  if (normalized.startsWith('40K')) return '40k';
+  if (normalized.startsWith('60K')) return '60k';
+  return normalized || '—';
+}
+
+function resolveImportCategory(row = {}) {
+  const raw = row.raw || {};
+  const rawMetadata = raw.metadata || {};
+  const categoryValue = row.benefitCategory
+    || row.normalized?.benefitCategory
+    || row.category
+    || row.Category
+    || row['Benefit Category']
+    || row['benefit category']
+    || row.benefit_category
+    || row.normalized?.benefit_category
+    || raw.benefitCategory
+    || raw.BenefitCategory
+    || raw['Benefit Category']
+    || raw['benefit category']
+    || raw.Category
+    || raw.category
+    || raw.benefit_category
+    || rawMetadata.benefitCategory
+    || rawMetadata.benefit_category
+    || rawMetadata['Benefit Category']
+    || rawMetadata.Category
+    || '';
+  const contributionValue = row.savings
+    || row.normalized?.savings
+    || row.shareCapital
+    || row.normalized?.shareCapital
+    || raw.shareCapital
+    || raw.Contribution
+    || raw.contribution
+    || raw.Savings
+    || raw.savings
+    || raw['Contribution Amount']
+    || raw['Amount Contributed']
+    || rawMetadata.shareCapital
+    || rawMetadata.Contribution
+    || rawMetadata.contribution
+    || rawMetadata.Savings
+    || rawMetadata.savings
+    || '';
+  return normalizeImportCategory(
+    categoryValue,
+    contributionValue,
+  );
 }
 
 function normalizeImportText(value) {
@@ -1259,9 +1312,10 @@ export default function Members() {
         ].map((value) => String(value || '').trim().toLowerCase()).join('|');
         if (seenImportRows.has(identityKey)) return null;
         seenImportRows.add(identityKey);
+        const resolvedBenefitCategory = validation.normalized.benefitCategory || benefitCategory;
         return {
           ...validation.normalized,
-          benefitCategory: validation.normalized.benefitCategory || benefitCategory,
+          benefitCategory: resolvedBenefitCategory,
           raw: row,
           rowNumber: sourceRow,
           normalized: validation.normalized,
@@ -1864,7 +1918,7 @@ export default function Members() {
                         <td className="px-6 py-5 whitespace-nowrap font-semibold">{row.member || 'Missing member name'}</td>
                         <td className="px-6 py-5">{row.barangay || 'â€”'}</td>
                         <td className="px-6 py-5 whitespace-nowrap">₱{row.savings ? Number(String(row.savings).replace(/,/g, '')).toLocaleString('en-PH') : '0'}</td>
-                        <td className="px-6 py-5 whitespace-nowrap">{row.benefitCategory || row.category || 'â€”'}</td>
+                        <td className="px-6 py-5 whitespace-nowrap">{formatImportCategory(resolveImportCategory(row), row.savings || row.normalized?.savings || row.raw?.Contribution || row.raw?.contribution || row.raw?.Savings || row.raw?.savings)}</td>
                         <td className="px-6 py-5 whitespace-nowrap">{row.contact || row.contactNumber || row.normalized?.contact || 'â€”'}</td>
                         <td className="px-6 py-5 whitespace-nowrap">{row.lastContributionDate ? formatDate(row.lastContributionDate) : 'â€”'}</td>
                         <td className="px-6 py-5 whitespace-nowrap">

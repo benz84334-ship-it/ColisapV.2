@@ -103,6 +103,36 @@ begin
 end;
 $$;
 
+create or replace function public.normalize_benefit_category(value text, share_capital_value numeric default null)
+returns text
+language plpgsql
+immutable
+as $$
+declare
+  cleaned text := nullif(trim(coalesce(value, '')), '');
+begin
+  if cleaned is not null then
+    if cleaned ~* '40\s*k|40,?000|basic life savings' then
+      return '40k';
+    end if;
+    if cleaned ~* '60\s*k|60,?000|premium life savings' then
+      return '60k';
+    end if;
+    return lower(cleaned);
+  end if;
+
+  if share_capital_value = 40000 then
+    return '40k';
+  end if;
+
+  if share_capital_value = 60000 then
+    return '60k';
+  end if;
+
+  return null;
+end;
+$$;
+
 drop trigger if exists sync_approved_request_to_member_trigger on public.requests;
 drop trigger if exists set_member_id_from_request_trigger on public.members;
 
@@ -204,25 +234,29 @@ begin
 end;
 $$;
 
-select setval(
-  'public.request_import_seq',
-  greatest(
-    coalesce((
-      select max(seq)
-      from (
-        select (regexp_match(request_id, '^REQ-\d{4}-(\d+)$'))[1]::bigint as seq
-        from public.requests
-        where request_id ~ '^REQ-\d{4}-\d+$'
-        union all
-        select (regexp_match(id, '^REQ-\d{4}-(\d+)$'))[1]::bigint as seq
-        from public.requests
-        where id ~ '^REQ-\d{4}-\d+$'
-      ) existing_request_sequences
-    ), 9999),
-    9999
-  ),
-  true
-);
+do $$
+begin
+  perform setval(
+    'public.request_import_seq',
+    greatest(
+      coalesce((
+        select max(seq)
+        from (
+          select (regexp_match(request_id, '^REQ-\d{4}-(\d+)$'))[1]::bigint as seq
+          from public.requests
+          where request_id ~ '^REQ-\d{4}-\d+$'
+          union all
+          select (regexp_match(id, '^REQ-\d{4}-(\d+)$'))[1]::bigint as seq
+          from public.requests
+          where id ~ '^REQ-\d{4}-\d+$'
+        ) existing_request_sequences
+      ), 9999),
+      9999
+    ),
+    true
+  );
+end;
+$$;
 
 create index if not exists requests_request_id_idx on public.requests (request_id);
 create index if not exists requests_member_id_idx on public.requests (member_id);
@@ -261,6 +295,7 @@ begin
       member_id,
       cif_number,
       application_status,
+      benefit_category,
       first_name,
       middle_name,
       last_name,
@@ -305,6 +340,22 @@ begin
       coalesce(nullif(trim(item->>'memberId'), ''), nullif(trim(item->>'cifNumber'), ''), nullif(trim(item->>'id'), ''), gen_random_uuid()::text),
       nullif(trim(item->>'cifNumber'), ''),
       coalesce(nullif(trim(item->>'applicationStatus'), ''), 'New'),
+      coalesce(
+        public.normalize_benefit_category(
+          coalesce(
+            nullif(trim(item->>'benefitCategory'), ''),
+            nullif(trim(item->>'benefit_category'), ''),
+            nullif(trim(item->>'Benefit Category'), ''),
+            nullif(trim(item->>'Category'), ''),
+            nullif(trim(item->>'category'), '')
+          ),
+          coalesce(
+            case when nullif(trim(item->>'shareCapital'), '') is null then null else trim(item->>'shareCapital')::numeric end,
+            0
+          )
+        ),
+        public.normalize_benefit_category(null, coalesce(case when nullif(trim(item->>'shareCapital'), '') is null then null else trim(item->>'shareCapital')::numeric end, 0))
+      ),
       nullif(trim(item->>'firstName'), ''),
       nullif(trim(item->>'middleName'), ''),
       nullif(trim(item->>'lastName'), ''),
@@ -508,7 +559,7 @@ begin
   );
 
   insert into public.members (
-    id, member_id, cif_number, application_status, first_name, middle_name, last_name, suffix_name, full_name,
+    id, member_id, cif_number, application_status, benefit_category, first_name, middle_name, last_name, suffix_name, full_name,
     address, barangay, birthdate, age_years, age_months, gender, civil_status, contact_number,
     occupation, employer, office_address, religion, religion_other, dependents, savings_account_no, last_contribution_date,
     membership_date, signed_date, witness_staff, action_taken, approving_authority, approval_date, findings, status,
@@ -520,6 +571,20 @@ begin
     stable_shared_code,
     stable_shared_code,
     coalesce(new.application_status, 'New'),
+    coalesce(
+      public.normalize_benefit_category(
+        coalesce(
+          nullif(trim(new.benefit_category), ''),
+          nullif(trim(new.metadata->>'benefitCategory'), ''),
+          nullif(trim(new.metadata->>'benefit_category'), ''),
+          nullif(trim(new.metadata->>'Benefit Category'), ''),
+          nullif(trim(new.metadata->>'Category'), ''),
+          nullif(trim(new.metadata->>'category'), '')
+        ),
+        coalesce(new.share_capital, 0)
+      ),
+      public.normalize_benefit_category(null, coalesce(new.share_capital, 0))
+    ),
     new.first_name, new.middle_name, new.last_name, new.suffix_name, new.full_name,
     new.address, new.barangay, new.birthdate, new.age_years, new.age_months, new.gender, new.civil_status, new.contact_number,
     new.occupation, new.employer, new.office_address, coalesce(new.religion_other, new.religion), new.religion_other, new.dependents,
@@ -980,7 +1045,19 @@ begin
       payload->>'membershipDate',
       payload->>'dateJoined'
     )), fallback_date),
-    'benefit_category', coalesce(nullif(trim(payload->>'benefitCategory'), ''), nullif(trim(payload->>'benefit_category'), ''), nullif(trim(payload->>'Benefit Category'), '')),
+    'benefit_category', coalesce(
+      public.normalize_benefit_category(
+        coalesce(
+          nullif(trim(payload->>'benefitCategory'), ''),
+          nullif(trim(payload->>'benefit_category'), ''),
+          nullif(trim(payload->>'Benefit Category'), ''),
+          nullif(trim(payload->>'Category'), ''),
+          nullif(trim(payload->>'category'), '')
+        ),
+        share_capital_value
+      ),
+      public.normalize_benefit_category(null, share_capital_value)
+    ),
     'beneficiaries', coalesce(payload->'beneficiaries', '[]'::jsonb),
     'photo', coalesce(nullif(trim(payload->>'photo'), ''), nullif(trim(payload->>'Photo'), '')),
     'metadata', coalesce(payload->'metadata', '{}'::jsonb)
