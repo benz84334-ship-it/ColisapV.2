@@ -68,10 +68,15 @@ const IMPORT_HEADERS = [
   'Member',
   'Barangay / Municipality',
   'Contribution',
+  'Category',
   'Contact',
   'Last Contribution Date',
   'Status',
 ];
+const BENEFIT_CATEGORY_OPTIONS = MEMBER_BENEFIT_CATEGORIES.map((value) => ({
+  value,
+  label: value.startsWith('40K') ? '40K' : '60K',
+}));
 
 function normalizeImportText(value) {
   return String(value ?? '').replace(/\s+/g, ' ').trim();
@@ -943,6 +948,7 @@ export default function Members() {
         cellClassName: 'whitespace-nowrap',
         render: (row) => formatCurrency(Number(row.shareCapital || 0)),
       },
+      { key: 'benefitCategory', label: 'Category', className: 'whitespace-nowrap', cellClassName: 'whitespace-nowrap', render: (row) => row.benefitCategory || '—' },
       { key: 'contactNumber', label: 'Contact', className: 'whitespace-nowrap', cellClassName: 'whitespace-nowrap' },
       { key: 'membershipDate', label: 'Last Contribution Date', className: 'whitespace-nowrap', cellClassName: 'whitespace-nowrap', render: (row) => formatDate(row.membershipDate) },
       { key: 'status', label: 'Status', className: 'whitespace-nowrap', cellClassName: 'whitespace-nowrap', render: (row) => <Badge>{row.status}</Badge> },
@@ -1531,6 +1537,17 @@ export default function Members() {
               : setForm((current) => ({ ...current, shareCapital: event.target.value === '' ? 0 : Number(event.target.value) })))}
           />
           <FormField
+            as="select"
+            className="md:col-span-1"
+            disabled={isRequestApprovalPage}
+            options={BENEFIT_CATEGORY_OPTIONS}
+            label="Category"
+            value={currentForm.benefitCategory}
+            onChange={(event) => (requestTarget
+              ? setReturnedDraft((current) => ({ ...current, benefitCategory: event.target.value }))
+              : setForm((current) => ({ ...current, benefitCategory: event.target.value })))}
+          />
+          <FormField
             className="md:col-span-2"
             error={errors.contactNumber}
             disabled={isRequestApprovalPage}
@@ -1799,6 +1816,7 @@ export default function Members() {
                         <th className="px-6 py-5">Member</th>
                         <th className="px-6 py-5">Barangay / Municipality</th>
                         <th className="px-6 py-5">Contribution</th>
+                        <th className="px-6 py-5">Category</th>
                         <th className="px-6 py-5">Contact</th>
                         <th className="px-6 py-5">Last Contribution Date</th>
                         <th className="px-6 py-5">Status</th>
@@ -1814,6 +1832,7 @@ export default function Members() {
                         <td className="px-6 py-5 whitespace-nowrap font-semibold">{row.member || 'Missing member name'}</td>
                         <td className="px-6 py-5">{row.barangay || 'â€”'}</td>
                         <td className="px-6 py-5 whitespace-nowrap">₱{row.savings ? Number(String(row.savings).replace(/,/g, '')).toLocaleString('en-PH') : '0'}</td>
+                        <td className="px-6 py-5 whitespace-nowrap">{row.benefitCategory || row.category || 'â€”'}</td>
                         <td className="px-6 py-5 whitespace-nowrap">{row.contact || row.contactNumber || row.normalized?.contact || 'â€”'}</td>
                         <td className="px-6 py-5 whitespace-nowrap">{row.lastContributionDate ? formatDate(row.lastContributionDate) : 'â€”'}</td>
                         <td className="px-6 py-5 whitespace-nowrap">
